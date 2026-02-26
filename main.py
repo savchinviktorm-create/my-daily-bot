@@ -8,24 +8,33 @@ from datetime import datetime
 
 def get_fuel_prices():
     try:
-        # Використовуємо Мінфін для отримання цін ОККО
+        # Джерело: Мінфін (розділ мережі ОККО)
         url = "https://index.minfin.com.ua/ua/markets/fuel/tm/okko/"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=15) as f:
             html = f.read().decode('utf-8')
             
-            def find_p(name):
-                # Пошук ціни в таблиці
-                match = re.search(fr'{name}.*?([\d.,]+)', html, re.IGNORECASE | re.DOTALL)
-                return match.group(1).replace(',', '.') if match else "—"
+            # Покращений пошук цін у таблиці Мінфіну
+            def find_p(fuel_name):
+                # Шукаємо назву пального в таблиці, а потім перше число після нього (ціну)
+                pattern = fr'<td>{fuel_name}</td>\s*<td>([\d.,]+)</td>'
+                match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+                if match:
+                    return f"{match.group(1).replace(',', '.')} грн"
+                return "—"
 
+            # Визначаємо конкретні типи пального за назвами на сайті
+            p_95 = find_p("А-95")
+            diesel = find_p("Дизельне паливо")
+            gas = find_p("Газ")
+            
             return (f"⛽ <b>Ціни ОККО (Мінфін):</b>\n"
-                    f"🔹 А-95+: {find_p('А-95')} грн\n"
-                    f"🔹 ДП: {find_p('Дизель')} грн\n"
-                    f"🔹 ГАЗ: {find_p('Газ')} грн")
+                    f"🔹 А-95+: {p_95}\n"
+                    f"🔹 ДП: {diesel}\n"
+                    f"🔹 ГАЗ: {gas}")
     except:
-        return "⛽ <b>Ціни ОККО:</b> тимчасово недоступні"
+        return "⛽ <b>Ціни ОККО:</b> дані оновлюються..."
 
 def get_weather(city, lat, lon, key):
     try:
@@ -45,9 +54,9 @@ def get_mono_currency():
             data = json.loads(f.read().decode())
             usd = next(item for item in data if item['currencyCodeA'] == 840 and item['currencyCodeB'] == 980)
             eur = next(item for item in data if item['currencyCodeA'] == 978 and item['currencyCodeB'] == 980)
-            return f"🔹 <b>Mono:</b> USD {usd['rateBuy']}/{usd['rateSell']} | EUR {eur['rateBuy']}/{eur['rateSell']}"
+            return f"🔹 <b>Monobank:</b>\n💵 USD: {usd['rateBuy']}/{usd['rateSell']}\n💶 EUR: {eur['rateBuy']}/{eur['rateSell']}"
     except:
-        return "🔹 <b>Mono:</b> недоступний"
+        return "🔹 <b>Monobank:</b> недоступний"
 
 def get_privat_currency():
     try:
@@ -56,14 +65,14 @@ def get_privat_currency():
             data = json.loads(f.read().decode())
             usd = next(item for item in data if item['ccy'] == 'USD')
             eur = next(item for item in data if item['ccy'] == 'EUR')
-            return f"🔸 <b>Приват:</b> USD {float(usd['buy']):.2f}/{float(usd['sale']):.2f} | EUR {float(eur['buy']):.2f}/{float(eur['sale']):.2f}"
+            return f"🔸 <b>ПриватБанк:</b>\n💵 USD: {float(usd['buy']):.2f}/{float(usd['sale']):.2f}\n💶 EUR: {float(eur['buy']):.2f}/{float(eur['sale']):.2f}"
     except:
-        return "🔸 <b>Приват:</b> недоступний"
+        return "🔸 <b>ПриватБанк:</b> недоступний"
 
 def get_horoscope():
     try:
         signs = {"Овен":"♈","Телець":"♉","Близнюки":"♊","Рак":"♋","Лев":"♌","Діва":"♍","Терези":"♎","Скорпіон":"♏","Стрілець":"♐","Козоріг":"♑","Водолій":"♒","Риби":"♓"}
-        advices = ["Вдалий день для нових починань.", "Будьте обережні з фінансами.", "День сприяє спілкуванню.", "Сприятливий час для відпочинку.", "Ваші лідерські якості на висоті.", "Зверніть увагу на здоров'я."]
+        advices = ["Вдалий день для справ.", "Будьте обережні з фінансами.", "Час для спілкування.", "Краще відпочити.", "Лідерство за вами.", "Зверніть увагу на здоров'я."]
         text = "<b>✨ Гороскоп на сьогодні:</b>\n"
         for s, e in signs.items():
             text += f"{e} {s}: {random.choice(advices)}\n"
@@ -103,7 +112,7 @@ if __name__ == "__main__":
     CHAT_ID = os.environ.get("MY_CHAT_ID", "").strip()
     W_KEY = os.environ.get("WEATHER_API_KEY", "").strip()
 
-    # Розрахунок часу (Київ)
+    # Час Києва
     now_hour = (datetime.now().hour + 2) % 24
     date_str = datetime.now().strftime('%d.%m.%Y')
     
@@ -112,18 +121,16 @@ if __name__ == "__main__":
         get_weather("Львів", 49.83, 24.02, W_KEY)
     ]
     
-    currency_info = [
-        "💰 <b>Курс валют для порівняння:</b>",
-        get_mono_currency(),
-        get_privat_currency()
-    ]
+    currency_header = "💰 <b>Курс валют для порівняння:</b>"
 
     if now_hour >= 14:
         # --- ДЕННИЙ ОГЛЯД ---
         report = [
             f"🌤 <b>ДЕННИЙ ОГЛЯД ({date_str})</b>\n",
             *weather_info,
-            "\n" + "\n".join(currency_info),
+            "\n" + currency_header,
+            get_mono_currency(),
+            get_privat_currency(),
             "\n" + get_fuel_prices(),
             "\n<i>Гарного вечора! ✅</i>"
         ]
@@ -133,7 +140,9 @@ if __name__ == "__main__":
         report = [
             f"📅 <b>РАНКОВИЙ ЗВІТ ({date_str})</b>\n",
             *weather_info,
-            "\n" + "\n".join(currency_info) + "\n",
+            "\n" + currency_header,
+            get_mono_currency(),
+            get_privat_currency() + "\n",
             "😇 <b>Іменини сьогодні:</b>",
             get_line_by_date("names.txt", "немає даних про іменини"),
             "\n📜 <b>Цей день в історії:</b>",
@@ -143,7 +152,7 @@ if __name__ == "__main__":
             f"<i>\"{get_random_line('database.txt', 'Живи сьогодні!')}\"</i>",
             "\n😂 <b>Анекдот дня:</b>",
             get_random_line("jokes.txt", "сьогодні без жартів..."),
-            f"\n🎄 До Нового року залишилося: <b>{days_left}</b> днів!",
+            f"\n🎄 До Нового року: <b>{days_left}</b> днів!",
             "\n<i>Вдалого дня! ✅</i>"
         ]
 
