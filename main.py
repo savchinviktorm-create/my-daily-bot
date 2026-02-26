@@ -7,34 +7,33 @@ import re
 from datetime import datetime
 
 def get_fuel_prices():
+    """Отримує середні ціни на пальне в Україні з порталу Мінфін"""
     try:
-        # Джерело: Мінфін (розділ мережі ОККО)
-        url = "https://index.minfin.com.ua/ua/markets/fuel/tm/okko/"
+        url = "https://index.minfin.com.ua/ua/markets/fuel/"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=15) as f:
             html = f.read().decode('utf-8')
             
-            # Покращений пошук цін у таблиці Мінфіну
-            def find_p(fuel_name):
-                # Шукаємо назву пального в таблиці, а потім перше число після нього (ціну)
-                pattern = fr'<td>{fuel_name}</td>\s*<td>([\d.,]+)</td>'
+            # Логіка пошуку середньої ціни в таблиці
+            def find_avg_price(name):
+                # Шукаємо рядок з назвою пального та беремо перше число (середню ціну)
+                pattern = fr'<td>.*?{name}.*?</td>\s*<td[^>]*>([\d.,]+)</td>'
                 match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
                 if match:
                     return f"{match.group(1).replace(',', '.')} грн"
                 return "—"
 
-            # Визначаємо конкретні типи пального за назвами на сайті
-            p_95 = find_p("А-95")
-            diesel = find_p("Дизельне паливо")
-            gas = find_p("Газ")
+            a95 = find_avg_price("А-95")
+            dp = find_avg_price("Дизельне паливо")
+            gas = find_avg_price("Газ автомобільний")
             
-            return (f"⛽ <b>Ціни ОККО (Мінфін):</b>\n"
-                    f"🔹 А-95+: {p_95}\n"
-                    f"🔹 ДП: {diesel}\n"
+            return (f"⛽ <b>Середні ціни на пальне:</b>\n"
+                    f"🔹 А-95: {a95}\n"
+                    f"🔹 ДП: {dp}\n"
                     f"🔹 ГАЗ: {gas}")
     except:
-        return "⛽ <b>Ціни ОККО:</b> дані оновлюються..."
+        return "⛽ <b>Пальне:</b> дані оновлюються на сервісі..."
 
 def get_weather(city, lat, lon, key):
     try:
@@ -72,7 +71,7 @@ def get_privat_currency():
 def get_horoscope():
     try:
         signs = {"Овен":"♈","Телець":"♉","Близнюки":"♊","Рак":"♋","Лев":"♌","Діва":"♍","Терези":"♎","Скорпіон":"♏","Стрілець":"♐","Козоріг":"♑","Водолій":"♒","Риби":"♓"}
-        advices = ["Вдалий день для справ.", "Будьте обережні з фінансами.", "Час для спілкування.", "Краще відпочити.", "Лідерство за вами.", "Зверніть увагу на здоров'я."]
+        advices = ["Вдалий день для справ.", "Будьте обережні з фінансами.", "День сприяє спілкуванню.", "Краще сьогодні відпочити.", "Ваші лідерські якості на висоті.", "Зверніть увагу на здоров'я."]
         text = "<b>✨ Гороскоп на сьогодні:</b>\n"
         for s, e in signs.items():
             text += f"{e} {s}: {random.choice(advices)}\n"
@@ -112,7 +111,7 @@ if __name__ == "__main__":
     CHAT_ID = os.environ.get("MY_CHAT_ID", "").strip()
     W_KEY = os.environ.get("WEATHER_API_KEY", "").strip()
 
-    # Час Києва
+    # Час (Київ)
     now_hour = (datetime.now().hour + 2) % 24
     date_str = datetime.now().strftime('%d.%m.%Y')
     
@@ -144,7 +143,7 @@ if __name__ == "__main__":
             get_mono_currency(),
             get_privat_currency() + "\n",
             "😇 <b>Іменини сьогодні:</b>",
-            get_line_by_date("names.txt", "немає даних про іменини"),
+            get_line_by_date("names.txt", "дані оновлюються..."),
             "\n📜 <b>Цей день в історії:</b>",
             get_line_by_date("history.txt", "сьогодні спокійний день"),
             "\n" + get_horoscope(),
