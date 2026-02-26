@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 
 def get_fuel_prices():
-    """Отримує середні ціни на пальне в Україні з головної сторінки Мінфін"""
+    """Максимально стабільний метод отримання цін через масив даних"""
     try:
         url = "https://index.minfin.com.ua/ua/markets/fuel/"
         headers = {
@@ -17,36 +17,32 @@ def get_fuel_prices():
         with urllib.request.urlopen(req, timeout=15) as f:
             html = f.read().decode('utf-8')
             
-            # Спеціальна логіка під верстку головної сторінки Мінфіну
-            def find_avg(name):
-                # Шукаємо назву, проходимо через теги до першої ціни
-                pattern = fr'<td>.*?{name}.*?</td>\s*<td[^>]*>([\d.,]+)</td>'
-                match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
-                if match:
-                    return f"{match.group(1).replace(',', '.')} грн"
-                return "—"
-
-            # Назви на сайті: "А-95", "Дизельне паливо", "Газ автомобільний"
-            a95 = find_avg("А-95")
-            dp = find_avg("Дизельне паливо")
-            gas = find_avg("Газ автомобільний")
+            # Витягуємо ВСІ ціни з таблиці (числа формату 54.99 або 30,50)
+            prices = re.findall(r'<td[^>]*>\s*([\d,.]+)\s*</td>', html)
             
-            # Якщо все одно прочерки, спробуємо запасний спрощений паттерн
-            if a95 == "—":
-                fallback = re.findall(r'<td[^>]*>([\d.,]{4,6})</td>', html)
-                if len(fallback) > 3:
-                    return (f"⛽ <b>Середні ціни на пальне:</b>\n"
-                            f"🔹 А-95: {fallback[1]} грн\n"
-                            f"🔹 ДП: {fallback[3]} грн\n"
-                            f"🔹 ГАЗ: {fallback[4]} грн")
-
-            return (f"⛽ <b>Середні ціни на пальне:</b>\n"
-                    f"🔹 А-95: {a95}\n"
-                    f"🔹 ДП: {dp}\n"
-                    f"🔹 ГАЗ: {gas}")
-    except Exception as e:
-        print(f"Fuel error: {e}")
+            # На головній Мінфіну порядок зазвичай такий:
+            # 0: А-95 преміум, 1: А-95, 2: А-92, 3: ДП, 4: Газ
+            if len(prices) >= 5:
+                a95 = prices[1].replace(',', '.')
+                dp = prices[3].replace(',', '.')
+                gas = prices[4].replace(',', '.')
+                
+                return (f"⛽ <b>Середні ціни на пальне:</b>\n"
+                        f"🔹 А-95: {a95} грн\n"
+                        f"🔹 ДП: {dp} грн\n"
+                        f"🔹 ГАЗ: {gas} грн")
+            
+            # Якщо таблиця інша, шукаємо по тексту дуже грубим методом
+            match = re.search(r'А-95.*?([\d,.]+).*?Дизельне.*?([\d,.]+).*?Газ.*?([\d,.]+)', html, re.S)
+            if match:
+                return (f"⛽ <b>Середні ціни на пальне:</b>\n"
+                        f"🔹 А-95: {match.group(1)} грн\n"
+                        f"🔹 ДП: {match.group(2)} грн\n"
+                        f"🔹 ГАЗ: {match.group(3)} грн")
+                
         return "⛽ <b>Пальне:</b> дані оновлюються..."
+    except:
+        return "⛽ <b>Пальне:</b> сервіс тимчасово недоступний"
 
 def get_weather(city, lat, lon, key):
     try:
@@ -84,7 +80,7 @@ def get_privat_currency():
 def get_horoscope():
     try:
         signs = {"Овен":"♈","Телець":"♉","Близнюки":"♊","Рак":"♋","Лев":"♌","Діва":"♍","Терези":"♎","Скорпіон":"♏","Стрілець":"♐","Козоріг":"♑","Водолій":"♒","Риби":"♓"}
-        advices = ["Вдалий день для справ.", "Будьте обережні з фінансами.", "День сприяє спілкуванню.", "Час відпочити.", "Ваше лідерство на висоті.", "Зверніть увагу на здоров'я."]
+        advices = ["Вдалий день для справ.", "Будьте обережні з фінансами.", "Час для спілкування.", "Краще відпочити.", "Лідерство за вами.", "Здоров'я понад усе."]
         text = "<b>✨ Гороскоп на сьогодні:</b>\n"
         for s, e in signs.items():
             text += f"{e} {s}: {random.choice(advices)}\n"
