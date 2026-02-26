@@ -1,8 +1,8 @@
 name: Daily Report
 on:
   schedule:
-    - cron: '0 6 * * *'  # 08:00 за Києвом
-  workflow_dispatch:      # Кнопка для ручного запуску
+    - cron: '0 6 * * *'
+  workflow_dispatch:
 
 jobs:
   send_report:
@@ -14,8 +14,6 @@ jobs:
         uses: actions/set-python@v4
         with:
           python-version: '3.10'
-      - name: Install requests
-        run: pip install requests
       - name: Run script
         env:
           TOKEN: ${{ secrets.TOKEN }}
