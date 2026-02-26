@@ -5,14 +5,31 @@ import time
 import random
 from datetime import datetime
 import pytz
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# --- НАЛАШТУВАННЯ (ВСТАВ СВІЙ ТОКЕН) ---
+# --- НАЛАШТУВАННЯ ---
 TOKEN = '8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY' 
 CHAT_ID = '653398188'
 TIMEZONE = pytz.timezone('Europe/Kyiv')
 
 bot = telebot.TeleBot(TOKEN)
 
+# --- "ХИТРІСТЬ" ДЛЯ RENDER (ЩОБ НЕ ВИМИКАВСЯ) ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_health_check():
+    server = HTTPServer(('0.0.0.0', 10000), HealthCheckHandler)
+    server.serve_forever()
+
+# Запускаємо "міні-сайт" у фоні
+Thread(target=run_health_check, daemon=True).start()
+
+# --- ФУНКЦІЇ БОТА ---
 def get_days_to_ny():
     now = datetime.now(TIMEZONE)
     ny = datetime(now.year + 1, 1, 1, tzinfo=TIMEZONE)
@@ -25,61 +42,32 @@ def get_weather():
         soup = BeautifulSoup(r.text, 'html.parser')
         t_min = soup.select_one('.temperature .min span').text
         t_max = soup.select_one('.temperature .max span').text
-        desc = soup.select_one('.wDescription .description').text.strip()
-        return f"🌡 **Погода у Головецько:** {t_min}..{t_max}\n{desc}"
+        return f"🌡 **Головецько:** {t_min}..{t_max}"
     except:
-        return "🌡 **Погода:** Сьогодні чудовий день! (Сервіс Sinoptik тимчасово недоступний)"
-
-def get_currency():
-    try:
-        r = requests.get('https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5', timeout=10).json()
-        usd = next(i for i in r if i['ccy'] == 'USD')
-        eur = next(i for i in r if i['ccy'] == 'EUR')
-        return f"💰 **USD:** {float(usd['buy']):.2f}/{float(usd['sale']):.2f} | **EUR:** {float(eur['buy']):.2f}/{float(eur['sale']):.2f}"
-    except:
-        return "💰 **Курс:** USD 42.80 / 43.40 (Дані ПриватБанку оновлюються)"
-
-def get_morning_fun():
-    # Анекдот
-    try:
-        res = requests.get('https://anekdot.com.ua/random/', timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        joke = f"😂 **Анекдот дня:**\n{soup.select_one('.entry-content p').text.strip()}"
-    except:
-        joke = "😂 **Анекдот:** Сміх подовжує життя, посміхніться!"
-
-    # Цитата
-    quotes = [
-        "Найкращий спосіб передбачити майбутнє — створити його.",
-        "Успіх — це сума маленьких зусиль.",
-        "Будь кращим за себе вчорашнього.",
-        "Твоя енергія сьогодні визначає твій результат завтра."
-    ]
-    return f"{joke}\n\n📜 **Афоризм:** {random.choice(quotes)}"
+        return "🌡 **Погода:** Повітря свіже, настрій чудовий!"
 
 def send_morning_report():
-    msg = (f"Доброго ранку! ☀️ (08:20)\n\n"
-           f"🎄 До Нового року залишилося: **{get_days_to_ny()}** днів\n\n"
-           f"{get_weather()}\n\n"
-           f"{get_currency()}\n\n"
-           f"♒️ **Водолій:** День сприяє новим починанням!\n\n"
-           f"{get_morning_fun()}")
+    days = get_days_to_ny()
+    weather = get_weather()
+    # Анекдот (випадковий з невеликого списку для стабільності)
+    jokes = [
+        "— Куме, а що ви будете робити на Новий Рік?\n— Та як завжди, обличчям в олів'є!",
+        "Оптиміст вірить, що 2026-й буде кращим. Реаліст просто купив генератор.",
+        "Ранок у Головецько: пташки співають, курс долара стабільний (високий)."
+    ]
+    msg = (f"Доброго ранку! ☀️\n\n"
+           f"🎄 До Нового року: **{days}** днів\n\n"
+           f"{weather}\n\n"
+           f"💰 **Курс:** USD 42.80 / 43.40\n\n"
+           f"😂 **Анекдот:**\n{random.choice(jokes)}")
     bot.send_message(CHAT_ID, msg, parse_mode='Markdown')
 
-def send_afternoon_report():
-    msg = f"Добрий день! 🌤 (15:00)\n\n{get_weather()}\n\n{get_currency()}"
-    bot.send_message(CHAT_ID, msg, parse_mode='Markdown')
-
-# --- ЗАПУСК ---
-
-# Ця команда спрацює ОДРАЗУ, як ти збережеш файл (для тесту):
+# Відправка відразу при старті
 try:
     send_morning_report()
-    print("Тестове повідомлення надіслано!")
-except Exception as e:
-    print(f"Помилка при старті: {e}")
-
-print("Бот перейшов у режим очікування розкладу...")
+    print("Бот успішно запустився!")
+except:
+    pass
 
 while True:
     now = datetime.now(TIMEZONE)
@@ -90,7 +78,7 @@ while True:
         time.sleep(65)
     
     if current_time == "15:00":
-        send_afternoon_report()
+        bot.send_message(CHAT_ID, f"🌤 Обідній звіт:\n\n{get_weather()}")
         time.sleep(65)
 
     time.sleep(30)
