@@ -60,7 +60,7 @@ def get_dynamic_content():
         joke_text = soup.select_one('.entry-content p').text.strip()
         joke = f"😂 **Анекдот дня:**\n{joke_text}"
     except:
-        joke = "😂 **Анекдот:** Сьогодні без жартів, гарного дня! 😊"
+        joke = "😂 **Анекдот:** Сьогодні без жартів, гарного дня!Ха-ха 😊"
 
     # Цитата/Афоризм (Випадкова з бази, бо API українською немає)
     quotes = [
