@@ -3,9 +3,9 @@ import json
 import random
 import urllib.request
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# Твоє посилання на Google Таблицю
+# Твоє перевірене посилання на Google Таблицю
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSExxHF9GN-lpJF9I3L9kLzFoH9lo4_emwtiEoHpiezlf3ESOw6dxGrjmQwk1wuFC6mV6035wu6-l4M/pub?gid=0&single=true&output=csv"
 
 def get_fuel_from_sheets():
@@ -16,7 +16,7 @@ def get_fuel_from_sheets():
             def extract(line_idx):
                 row = content[line_idx].split(',')
                 return row[2].replace('"', '').strip()
-            # Рядки: 1-Пр, 2-95, 4-ДП, 5-Газ
+            # Рядки в CSV: 1(95+), 2(95), 4(ДП), 5(Газ)
             return (f"⛽ <b>Ціни на пальне:</b>\n"
                     f"🔹 А-95+: {extract(1)} грн\n"
                     f"🔹 А-95: {extract(2)} грн\n"
@@ -32,8 +32,7 @@ def get_weather(city, lat, lon, key):
             data = json.loads(f.read().decode())
             t = round(data['main']['temp'])
             return f"📍 {city}: {'+' if t > 0 else ''}{t}°C, {data['weather'][0]['description'].capitalize()}"
-    except:
-        return f"📍 {city}: недоступна"
+    except: return f"📍 {city}: недоступна"
 
 def get_mono():
     try:
@@ -42,8 +41,7 @@ def get_mono():
             data = json.loads(f.read().decode())
             usd = next(item for item in data if item['currencyCodeA'] == 840 and item['currencyCodeB'] == 980)
             return f"💵 USD: {usd['rateBuy']}/{usd['rateSell']}"
-    except:
-        return "💵 USD: недоступно"
+    except: return "💵 USD: недоступно"
 
 def get_line_by_date(file_name, default_msg):
     try:
@@ -54,19 +52,16 @@ def get_line_by_date(file_name, default_msg):
                     if line.strip().startswith(today):
                         return line.strip()
         return f"{today}: {default_msg}"
-    except:
-        return default_msg
+    except: return default_msg
 
 def get_random_line(file_name, default_text):
     try:
         if os.path.exists(file_name):
             with open(file_name, 'r', encoding='utf-8') as f:
                 lines = [l.strip() for l in f if l.strip()]
-                if lines:
-                    return random.choice(lines)
+                if lines: return random.choice(lines)
         return default_text
-    except:
-        return default_text
+    except: return default_text
 
 def get_horoscope():
     advices = ["Вдалий день для починань.", "Будьте обережні з фінансами.", "Час для відпочинку.", "Можливі приємні сюрпризи.", "Зосередьтесь на головному."]
@@ -77,48 +72,4 @@ def get_horoscope():
     return res
 
 if __name__ == "__main__":
-    TOKEN = os.environ.get("TOKEN", "").strip()
-    CHAT_ID = os.environ.get("MY_CHAT_ID", "").strip()
-    W_KEY = os.environ.get("WEATHER_API_KEY", "").strip()
-
-    # Визначаємо час (Україна UTC+2)
-    now_hour = (datetime.now().hour + 2) % 24
-    date_str = datetime.now().strftime('%d.%m.%Y')
-    
-    weather_list = [get_weather("Головецько", 49.19, 23.46, W_KEY), get_weather("Львів", 49.83, 24.02, W_KEY)]
-    fuel_info = get_fuel_from_sheets()
-    money_info = get_mono()
-
-    if now_hour >= 14:
-        # ДЕННИЙ ЗВІТ
-        report = [
-            f"🌤 <b>ДЕННИЙ ОГЛЯД ({date_str})</b>\n",
-            *weather_list,
-            f"\n💰 <b>Курс валют:</b>\n{money_info}",
-            "\n" + fuel_info,
-            "\n<i>Гарного вечора! ✅</i>"
-        ]
-    else:
-        # РАНКОВИЙ ЗВІТ
-        target_ny = datetime(datetime.now().year + (1 if datetime.now().month == 12 else 0), 1, 1)
-        ny_days = (target_ny - datetime.now()).days
-        report = [
-            f"📅 <b>РАНКОВИЙ ЗВІТ ({date_str})</b>\n",
-            *weather_list,
-            f"\n💰 <b>Курс валют:</b>\n{money_info}",
-            "\n😇 <b>Іменини:</b>", get_line_by_date("names.txt", "немає даних"),
-            "\n📜 <b>Історія:</b>", get_line_by_date("history.txt", "день без подій"),
-            "\n" + get_horoscope(),
-            "\n💡 <b>Цитата:</b>", f"<i>\"{get_random_line('database.txt', 'Живи!')}\"</i>",
-            "\n😂 <b>Анекдот:</b>", get_random_line("jokes.txt", "Усміхніться!"),
-            f"\n🎄 До Нового року: <b>{ny_days}</b> днів!",
-            "\n" + fuel_info,
-            "\n<i>Вдалого дня! ✅</i>"
-        ]
-
-    # Відправка в Telegram
-    final_msg = "\n".join(report)
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    params = {'chat_id': CHAT_ID, 'text': final_msg, 'parse_mode': 'HTML'}
-    data = urllib.parse.urlencode(params).encode()
-    urllib.request.urlopen(urllib.request.Request(url, data=data))
+    TOKEN = os.
