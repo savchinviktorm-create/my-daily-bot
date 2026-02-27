@@ -3,6 +3,7 @@ import urllib.request
 import json
 import csv
 import io
+import re
 from datetime import datetime
 
 # Пряме посилання на твій CSV
@@ -15,42 +16,47 @@ def get_raw_data(url):
             return response.read().decode('utf-8')
     except: return None
 
+def extract_nums(row_list):
+    """Шукає числа в рядку, склеюючи цілі та копійки, якщо вони розбиті комою"""
+    full_line = "|".join(row_list).replace('"', '')
+    # Шукаємо шаблони типу 43|0000 або 43.0000
+    found = re.findall(r'(\d+)[|.](\d+)', full_line)
+    if len(found) >= 2:
+        buy = f"{found[0][0]}.{found[0][1][:2]}"
+        sale = f"{found[1][0]}.{found[1][1][:2]}"
+        return float(buy), float(sale)
+    return None, None
+
 def parse_currency():
     raw_data = get_raw_data(URL_CURRENCY_TABLE)
-    if not raw_data: return "❌ Не вдалося завантажити таблицю"
+    if not raw_data: return "❌ Таблиця недоступна"
     
-    usd_buy, usd_sale = "немає даних", "немає даних"
-    eur_buy, eur_sale = "немає даних", "немає даних"
-    u_val, e_val = 0.0, 0.0
+    rows = list(csv.reader(io.StringIO(raw_data)))
+    res = {"USD": "немає даних", "EUR": "немає даних"}
+    vals = {"USD": 0.0, "EUR": 0.0}
 
-    try:
-        f = io.StringIO(raw_data)
-        reader = csv.reader(f, delimiter=',')
+    for i, row in enumerate(rows):
+        if not row: continue
+        tag = row[0].strip().upper()
         
-        for row in reader:
-            if not row: continue
-            name = row[0].strip().upper()
+        # Якщо в колонці A написано USD або EUR, дані зазвичай рядком ВИЩЕ (згідно з твоїм скріншотом)
+        if tag in ["USD", "EUR"]:
+            # Спробуємо взяти числа з поточного рядка, а якщо їх там нема — з попереднього
+            b, s = extract_nums(row)
+            if b is None and i > 0:
+                b, s = extract_nums(rows[i-1])
             
-            # Якщо число 43,0000 розбилося на 43 та 0000
-            if name == "USD" and len(row) >= 5:
-                usd_buy = f"{row[1].strip()}.{row[2].strip()[:2]}"
-                usd_sale = f"{row[3].strip()}.{row[4].strip()[:2]}"
-                u_val = float(usd_buy)
-            
-            if name == "EUR" and len(row) >= 5:
-                eur_buy = f"{row[1].strip()}.{row[2].strip()[:2]}"
-                eur_sale = f"{row[3].strip()}.{row[4].strip()[:2]}"
-                e_val = float(eur_buy)
+            if b:
+                res[tag] = f"{b} / {s}"
+                vals[tag] = b
 
-        # Розрахунок крос-курсу
-        cross = round(e_val / u_val, 3) if u_val > 0 else "немає даних"
+    cross = round(vals["EUR"] / vals["USD"], 3) if vals["USD"] > 0 else "немає даних"
 
-        return (
-            f"🇺🇸 **USD:** {usd_buy} / {usd_sale}\n"
-            f"🇪🇺 **EUR:** {eur_buy} / {eur_sale}\n"
-            f"💱 **Крос-курс EUR/USD:** {cross}"
-        )
-    except: return "⚠️ Помилка обробки даних"
+    return (
+        f"🇺🇸 **USD:** {res['USD']}\n"
+        f"🇪🇺 **EUR:** {res['EUR']}\n"
+        f"💱 **Крос-курс EUR/USD:** {cross}"
+    )
 
 def get_weather():
     api_key = os.getenv('WEATHER_API_KEY')
@@ -62,18 +68,16 @@ def get_weather():
         if d:
             js = json.loads(d)
             reports.append(f"📍 {name}: {round(js['main']['temp'])}°C, {js['weather'][0]['description'].capitalize()}")
-    return "\n".join(reports) if reports else "немає даних"
+    return "\n".join(reports)
 
 def get_git_info(file_name, search_key):
     url = f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file_name}"
     data = get_raw_data(url)
     if data:
         for line in data.splitlines():
-            # Шукаємо "27 лютого" без урахування регістру
+            # Очищаємо рядок від зайвих пробілів для точного пошуку
             if search_key.lower() in line.lower():
-                if '—' in line: return line.split('—', 1)[-1].strip()
-                if ':' in line: return line.split(':', 1)[-1].strip()
-                return line.strip()
+                return line.split('—', 1)[-1].strip() if '—' in line else line.split(':', 1)[-1].strip()
     return "немає даних"
 
 def send_report():
@@ -103,9 +107,9 @@ def send_report():
         f"⛽ **Ціни на пальне:**\nА-95: 56.15 грн\nДП: 52.30 грн\nГаз: 27.85 грн"
     )
 
-    api_url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}).encode('utf-8')
-    req = urllib.request.Request(api_url, data=payload, headers={'Content-Type': 'application/json'})
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", 
+                                 data=json.dumps({"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}).encode('utf-8'),
+                                 headers={'Content-Type': 'application/json'})
     urllib.request.urlopen(req)
 
 if __name__ == "__main__":
