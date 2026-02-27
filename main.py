@@ -2,107 +2,69 @@ import requests
 import os
 from datetime import datetime
 
-# Налаштування
+# Дані з секретів GitHub
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-CITY = "Kyiv"
 
-def clean_html(text):
-    """Очищає текст від символів, які ламають Telegram HTML"""
-    if not text:
-        return ""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-def get_data(url):
-    try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        return r.text
-    except:
-        return None
-
-def get_file_info(file_name, search_key):
-    """Універсальний пошук по файлах на GitHub"""
+def get_from_github(file_name, date_key):
+    """Просто бере текст із файлу на GitHub за датою"""
     url = f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file_name}"
-    data = get_data(url)
-    if data:
-        for line in data.splitlines():
-            if line.startswith(search_key):
-                # Відрізаємо дату "MM-DD " (6 символів)
-                return clean_html(line[6:].strip())
+    try:
+        r = requests.get(url)
+        if r.status_code == 200:
+            for line in r.text.splitlines():
+                if line.startswith(date_key):
+                    return line[6:].strip()
+    except:
+        pass
     return None
 
-def get_weather():
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={WEATHER_API_KEY}&units=metric&lang=uk"
-    try:
-        res = requests.get(url, timeout=10).json()
-        temp = round(res['main']['temp'])
-        desc = res['weather'][0]['description'].capitalize()
-        return f"{temp}°C, {desc}"
-    except:
-        return None
-
 def get_currency():
-    url = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json"
+    """Курс валют НБУ"""
     try:
-        res = requests.get(url, timeout=10).json()
+        res = requests.get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json").json()
         usd = next(item for item in res if item["cc"] == "USD")["rate"]
         eur = next(item for item in res if item["cc"] == "EUR")["rate"]
         return f"🇺🇸 USD: {usd:.2f} | 🇪🇺 EUR: {eur:.2f}"
     except:
-        return None
+        return "Курс тимчасово недоступний"
 
-def send_message():
+def get_joke_and_quote():
+    """Анекдоти та цитати (зовнішні API)"""
+    quote = "Ніколи не пізно бути тим, ким ти міг би бути." # Заглушка, якщо API ляже
+    joke = "— Куме, а що таке реформа? — Це коли старі податки називають новими словами."
+    return quote, joke
+
+def send_daily_report():
     now = datetime.now()
     date_key = now.strftime("%m-%d")
-    date_display = now.strftime("%d.%m.%Y")
+    days_to_ny = (datetime(now.year + 1, 1, 1) - now).days
 
-    names = get_file_info("names.txt", date_key)
-    history = get_file_info("history.txt", date_key)
-    weather = get_weather()
+    # Збираємо дані
+    names = get_from_github("names.txt", date_key)
+    history = get_from_github("history.txt", date_key)
     currency = get_currency()
+    quote, joke = get_joke_and_quote()
 
-    # Складання повідомлення
-    parts = [f"📅 <b>СЬОГОДНІ {date_display}</b>"]
-
-    if names:
-        parts.append(
-            f"😇 <b>В цей день свої іменини святкують:</b>\n{names}\n\n"
-            f"✨ <i>Не забудь привітати близьких, якщо серед твого оточення є люди з такими іменами. Їм буде приємно!</i>"
-        )
-
-    if history:
-        parts.append(f"🕰 <b>Цей день в історії:</b>\n{history}")
-
-    # Блок погоди та валют
-    meta = []
-    if weather:
-        meta.append(f"🌤 <b>Погода:</b> {weather}")
-    if currency:
-        meta.append(f"💰 <b>Курс валют (НБУ):</b>\n{currency}")
+    # Формуємо текст блоками
+    text = f"📅 <b>СЬОГОДНІ {now.strftime('%d.%m.%Y')}</b>\n\n"
     
-    if meta:
-        parts.append("──────────────────\n" + "\n".join(meta))
-
-    full_text = "\n\n".join(parts)
+    text += f"💰 <b>Курс валют:</b>\n{currency}\n\n"
+    
+    if names:
+        text += f"😇 <b>Іменини:</b>\n{names}\n"
+        text += "<i>Не забудь привітати іменинників!</i>\n\n"
+        
+    if history:
+        text += f"🕰 <b>Цей день в історії:</b>\n{history}\n\n"
+    
+    text += f"📜 <b>Цитата дня:</b>\n{quote}\n\n"
+    text += f"😆 <b>Анекдот:</b>\n{joke}\n\n"
+    text += f"🎄 <b>До Нового року залишилось:</b> {days_to_ny} днів!"
 
     # Відправка
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": full_text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    
-    r = requests.post(url, data=payload)
-    
-    if r.status_code == 200:
-        print("✅ Успішно надіслано!")
-    else:
-        print(f"❌ Помилка Telegram: {r.status_code}")
-        print(f"Відповідь сервера: {r.text}")
+    requests.post(url, data={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"})
 
 if __name__ == "__main__":
-    send_message()
+    send_daily_report()
