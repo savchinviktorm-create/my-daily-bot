@@ -1,32 +1,91 @@
-name: Daily Report
+import os
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
 
-on:
-  schedule:
-    - cron: '37 4 * * *'
-    - cron: '12 12 * * *'
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+def get_data():
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    }
+    
+    # --- ВАЛЮТА НБУ ---
+    nbu = "н/д"
+    try:
+        r = requests.get("https://bank.gov.ua/NBUStatService/v1/statistictic/exchange?json", timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            usd = next(i['rate'] for i in data if i['cc'] == 'USD')
+            eur = next(i['rate'] for i in data if i['cc'] == 'EUR')
+            nbu = f"🇺🇸 {usd:.2f} | 🇪🇺 {eur:.2f}"
+    except: pass
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    # --- ПРИВАТБАНК ---
+    pb = "н/д"
+    try:
+        r = requests.get("https://api.privatbank.ua/p24api/pubinfo?exchange&coursid=5", timeout=10)
+        data = r.json()
+        u = next(i for i in data if i['ccy'] == 'USD')
+        e = next(i for i in data if i['ccy'] == 'EUR')
+        pb = f"🇺🇸 {float(u['buy']):.2f}/{float(u['sale']):.2f} | 🇪🇺 {float(e['buy']):.2f}/{float(e['sale']):.2f}"
+    except: pass
 
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    # --- ПАЛЬНЕ (Тільки живі дані з Мінфіну) ---
+    fuel = {"a95": "н/д", "dp": "н/д", "gas": "н/д"}
+    try:
+        r = requests.get("https://index.minfin.com.ua/ua/fuel/average/", headers=headers, timeout=15)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            # Шукаємо таблицю з класом 'list'
+            table = soup.find('table', class_='list')
+            rows = table.find_all('tr')
+            for row in rows:
+                cols = row.find_all('td')
+                if len(cols) >= 2:
+                    name = cols[0].text.strip()
+                    price = cols[1].text.strip().replace('\xa0', ' ')
+                    if "A-95" in name and "Плюс" not in name: fuel["a95"] = price
+                    elif "ДП" in name: fuel["dp"] = price
+                    elif "Газ" in name: fuel["gas"] = price
+    except Exception as e:
+        print(f"Помилка пального: {e}")
+    
+    fuel_txt = f"🔹 А-95: {fuel['a95']} грн\n🔹 ДП: {fuel['dp']} грн\n🔹 Газ: {fuel['gas']} грн"
+    
+    return nbu, pb, fuel_txt
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+def get_git_info(file, key):
+    url = f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file}"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            # Декодуємо текст, щоб уникнути проблем з кирилицею
+            lines = r.content.decode('utf-8').splitlines()
+            for line in lines:
+                if key in line:
+                    return line.split('—', 1)[-1].strip()
+    except: pass
+    return "немає даних"
 
-      - name: Run Telegram Bot Script
-        env:
-          TOKEN: ${{ secrets.TOKEN }}
-          MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
-        run: python main.py
+def send():
+    nbu, pb, fuel = get_data()
+    now = datetime.now()
+    
+    m_ukr = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"]
+    day_name = f"{now.day} {m_ukr[now.month-1]}"
+    day_hist = now.strftime("%m-%d")
+
+    msg = (
+        f"📅 **ЗВІТ НА {now.strftime('%d.%m.%Y')}**\n\n"
+        f"🏛 **КУРС НБУ:**\n{nbu}\n\n"
+        f"🏦 **ПРИВАТБАНК:**\n{pb}\n\n"
+        f"⛽ **СЕРЕДНІ ЦІНИ НА ПАЛЬНЕ:**\n{fuel}\n\n"
+        f"😇 **ІМЕНИНИ:** {get_git_info('names.txt', day_name)}\n"
+        f"📜 **ІСТОРІЯ:** {get_git_info('history.txt', day_hist)}\n\n"
+        f"🎄 До Нового року: {(datetime(now.year + 1, 1, 1) - now).days} днів!"
+    )
+
+    requests.post(f"https://api.telegram.org/bot{os.getenv('TOKEN')}/sendMessage", 
+                  json={"chat_id": os.getenv('MY_CHAT_ID'), "text": msg, "parse_mode": "Markdown"})
+
+if __name__ == "__main__":
+    send()
