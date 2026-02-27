@@ -2,12 +2,8 @@ name: Daily Report
 
 on:
   schedule:
-    # Запуск кожного дня о 05:30 та 12:00 за UTC
-    - cron: '30 5 * * *'
-    - cron: '0 12 * * *'
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+    - cron: '0 6 * * *'  # 08:00 за Києвом
+  workflow_dispatch:      # Кнопка ручного запуску
 
 jobs:
   build:
@@ -19,11 +15,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.9'
 
-      - name: Run Telegram Bot Script
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run script
         env:
-          TOKEN: ${{ secrets.TOKEN }}
-          MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
         run: python main.py
