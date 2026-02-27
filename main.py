@@ -3,100 +3,99 @@ import urllib.request
 import json
 import csv
 import io
+import re
 from datetime import datetime
 
-# Твоє пряме посилання
+# Посилання залишається те саме
 URL_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSExxHF9GN-lpJF9I3L9kLzFoH9lo4_emwtiEoHpiezlf3ESOw6dxGrjmQwk1wuFC6mV6035wu6-l4M/pub?gid=2060076239&single=true&output=csv"
 
-def get_data(url):
+def get_data_from_file(url):
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return r.read().decode('utf-8')
-    except: return None
+        with urllib.request.urlopen(req, timeout=20) as r:
+            # Читаємо як байти і декодуємо в utf-8, ігноруючи помилки
+            content = r.read()
+            return content.decode('utf-8', errors='ignore')
+    except Exception as e:
+        print(f"Завантаження не вдалося: {e}")
+        return None
 
-def parse_table():
-    raw = get_data(URL_CSV)
-    if not raw: return None
-    
-    # Робимо плоский список усіх значень з таблиці
-    f = io.StringIO(raw)
+def parse_everything():
+    raw_text = get_data_from_file(URL_CSV)
+    if not raw_text:
+        return None
+
+    # Використовуємо StringIO для імітації файлу в пам'яті
+    f = io.StringIO(raw_text)
     reader = csv.reader(f)
-    data = []
-    for row in reader:
-        data.extend([cell.strip() for cell in row if cell.strip()])
-
-    def get_val(keyword, offset=1):
-        """Шукає слово і склеює число з наступною клітинкою (копійками)"""
-        for i, word in enumerate(data):
-            if keyword.lower() in word.lower():
-                try:
-                    # Склеюємо ціле + копійки (напр. 56 і 1500)
-                    val = f"{data[i+offset]}.{data[i+offset+1][:2]}"
-                    return float(val)
-                except: continue
-        return 0.0
-
-    # Витягуємо валюту
-    u_buy = get_val("USD", 1)
-    u_sale = get_val("USD", 3)
-    e_buy = get_val("EUR", 1)
-    e_sale = get_val("EUR", 3)
     
-    # Витягуємо пальне (тепер реально з таблиці!)
-    a95 = get_val("А-95", 1)
-    dp = get_val("ДП", 1)
-    gas = get_val("Газ", 1)
-
-    cross = round(e_buy / u_buy, 3) if u_buy > 0 else 0
-
-    return {
-        "cur": f"🇺🇸 **USD:** {u_buy} / {u_sale}\n🇪🇺 **EUR:** {e_buy} / {e_sale}\n💱 **Крос-курс:** {cross}",
-        "fuel": f"⛽ **Пальне:**\nА-95: {a95} грн\nДП: {dp} грн\nГаз: {gas} грн"
+    results = {
+        "USD_BUY": "0.00", "USD_SALE": "0.00",
+        "EUR_BUY": "0.00", "EUR_SALE": "0.00",
+        "A95": "0.00", "DP": "0.00", "GAS": "0.00"
     }
 
-def get_weather():
-    key = os.getenv('WEATHER_API_KEY')
-    locs = [("Головецько", "lat=49.20&lon=23.45"), ("Львів", "q=Lviv")]
-    out = []
-    for name, p in locs:
-        d = get_data(f"http://api.openweathermap.org/data/2.5/weather?{p}&appid={key}&units=metric&lang=uk")
-        if d:
-            js = json.loads(d)
-            out.append(f"📍 {name}: {round(js['main']['temp'])}°C, {js['weather'][0]['description'].capitalize()}")
-    return "\n".join(out)
+    for row in reader:
+        # Очищаємо рядок від зайвого
+        row_str = "|".join([c.strip() for c in row if c.strip()])
+        if not row_str: continue
 
-def get_git_info(file_name, key):
-    d = get_data(f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file_name}")
-    if d:
-        for line in d.splitlines():
-            if key.lower() in line.lower():
-                return line.split('—', 1)[-1].strip() if '—' in line else line.strip()
-    return "дані відсутні"
+        # Шукаємо всі числа в рядку через регулярні вирази
+        # Це витягне ['56', '1500'] навіть якщо вони в різних клітинках
+        nums = re.findall(r'\d+', row_str)
 
-def send():
+        # Логіка визначення що це за рядок
+        if "USD" in row_str.upper() and len(nums) >= 4:
+            results["USD_BUY"] = f"{nums[0]}.{nums[1][:2]}"
+            results["USD_SALE"] = f"{nums[2]}.{nums[3][:2]}"
+        
+        elif "EUR" in row_str.upper() and len(nums) >= 4:
+            results["EUR_BUY"] = f"{nums[0]}.{nums[1][:2]}"
+            results["EUR_SALE"] = f"{nums[2]}.{nums[3][:2]}"
+        
+        elif "А-95" in row_str and len(nums) >= 2:
+            results["A95"] = f"{nums[0]}.{nums[1][:2]}"
+        
+        elif "ДП" in row_str and len(nums) >= 2:
+            results["DP"] = f"{nums[0]}.{nums[1][:2]}"
+        
+        elif "Газ" in row_str and len(nums) >= 2:
+            results["GAS"] = f"{nums[0]}.{nums[1][:2]}"
+
+    return results
+
+def send_final_report():
+    data = parse_everything()
+    if not data:
+        print("Не вдалося отримати дані з таблиці")
+        return
+
     now = datetime.now()
-    months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
-    day_month = f"{now.day} {months[now.month-1]}"
-
-    info = parse_table()
-    currency_text = info['cur'] if info else "⚠️ Помилка валют"
-    fuel_text = info['fuel'] if info else "⚠️ Помилка пального"
+    # Математичний крос-курс (чистий розрахунок)
+    try:
+        cross = round(float(data["EUR_BUY"]) / float(data["USD_BUY"]), 3) if float(data["USD_BUY"]) > 0 else 0
+    except: cross = "н/д"
 
     msg = (
         f"📅 **ЗВІТ НА {now.strftime('%d.%m.%Y')}**\n\n"
-        f"🌡 **Погода:**\n{get_weather()}\n\n"
-        f"💰 **Курс валют:**\n{currency_text}\n\n"
-        f"⛽ **Ціни на пальне:**\n{fuel_text}\n\n"
-        f"😇 **Іменини:**\n{day_month}: {get_git_info('names.txt', day_month)}\n\n"
-        f"📜 **Історія:**\n{get_git_info('history.txt', now.strftime('%m-%d'))}\n\n"
+        f"💰 **Курс валют (Мінфін):**\n"
+        f"🇺🇸 USD: {data['USD_BUY']} / {data['USD_SALE']}\n"
+        f"🇪🇺 EUR: {data['EUR_BUY']} / {data['EUR_SALE']}\n"
+        f"💱 Крос-курс: {cross}\n\n"
+        f"⛽ **Ціни на пальне (Мінфін):**\n"
+        f"🔹 А-95: {data['A95']} грн\n"
+        f"🔹 ДП: {data['DP']} грн\n"
+        f"🔹 Газ: {data['GAS']} грн\n\n"
         f"🎄 До Нового року: {(datetime(now.year + 1, 1, 1) - now).days} днів!"
     )
 
-    url = f"https://api.telegram.org/bot{os.getenv('TOKEN')}/sendMessage"
-    payload = json.dumps({"chat_id": os.getenv('MY_CHAT_ID'), "text": msg, "parse_mode": "Markdown"}).encode('utf-8')
+    token = os.getenv('TOKEN')
+    chat_id = os.getenv('MY_CHAT_ID')
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = json.dumps({"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}).encode('utf-8')
     req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
     urllib.request.urlopen(req)
 
 if __name__ == "__main__":
-    send()
+    send_final_report()
+    
