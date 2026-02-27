@@ -1,7 +1,6 @@
 import os
 import urllib.request
 import json
-import re
 from datetime import datetime
 
 # --- ВСТАВ СВОЄ ПОСИЛАННЯ (CSV) ТУТ ---
@@ -16,42 +15,35 @@ def get_raw_data(url):
 
 def parse_currency():
     raw_data = get_raw_data(URL_CURRENCY_TABLE)
-    if not raw_data: return "❌ Таблиця недоступна"
+    if not raw_data: return "❌ Помилка завантаження таблиці"
     
-    usd_res, eur_res = "немає даних", "немає даних"
-    u_buy, e_buy = 0.0, 0.0
-
-    # Розбиваємо на рядки
     lines = raw_data.splitlines()
-    for line in lines:
-        # Прибираємо зайве: лапки, зайві пробіли
-        clean_line = line.replace('"', '').strip()
-        
-        # Витягуємо всі числа (цілі або з комою/крапкою)
-        nums = re.findall(r'\d+[.,]\d+|\d+', clean_line)
-        
-        # Шукаємо USD (не обов'язково на початку)
-        if "USD" in clean_line and len(nums) >= 2:
-            b = nums[0].replace(',', '.')
-            s = nums[1].replace(',', '.')
-            u_buy = float(b)
-            usd_res = f"{b} / {s}"
-            
-        # Шукаємо EUR
-        if "EUR" in clean_line and len(nums) >= 2:
-            eb = nums[0].replace(',', '.')
-            es = nums[1].replace(',', '.')
-            e_buy = float(eb)
-            eur_res = f"{eb} / {es}"
+    try:
+        # Чистимо функцію для прибирання лапок
+        def c(v): return v.replace('"', '').strip()
 
-    # Розрахунок крос-курсу
-    cross = round(e_buy / u_buy, 3) if u_buy > 0 else "немає даних"
+        # USD Банки - Рядок 2 (індекс 1)
+        # У CSV копійки — це окремий стовпець. 
+        # Стовпець B (індекс 1) - цілі, стовпець C (індекс 2) - копійки.
+        line_usd = lines[1].split(',')
+        usd_buy = f"{c(line_usd[1])}.{c(line_usd[2])}"
+        usd_sale = f"{c(line_usd[3])}.{c(line_usd[4])}"
+        
+        # EUR Банки - Рядок 16 (індекс 15)
+        line_eur = lines[15].split(',')
+        eur_buy = f"{c(line_eur[1])}.{c(line_eur[2])}"
+        eur_sale = f"{c(line_eur[3])}.{c(line_eur[4])}"
 
-    return (
-        f"🇺🇸 **USD:** {usd_res}\n"
-        f"🇪🇺 **EUR:** {eur_res}\n"
-        f"💱 **Крос-курс EUR/USD:** {cross}"
-    )
+        # Крос-курс (математично в коді)
+        cross = round(float(eur_buy) / float(usd_buy), 3)
+
+        return (
+            f"🇺🇸 **USD:** {usd_buy} / {usd_sale}\n"
+            f"🇪🇺 **EUR:** {eur_buy} / {eur_sale}\n"
+            f"💱 **Крос-курс EUR/USD:** {cross}"
+        )
+    except:
+        return "⚠️ Оновіть дані в таблиці (USD/EUR)"
 
 def get_weather():
     api_key = os.getenv('WEATHER_API_KEY')
@@ -69,7 +61,6 @@ def get_git_info(file_name, search_key):
     url = f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file_name}"
     data = get_raw_data(url)
     if data:
-        # Для іменин шукаємо просто входження дати (напр. "27 лютого")
         for line in data.splitlines():
             if search_key.lower() in line.lower():
                 return line.split('—', 1)[-1].strip() if '—' in line else line.split(':', 1)[-1].strip()
@@ -81,17 +72,14 @@ def send_report():
     now = datetime.now()
     
     months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
-    day_month_text = f"{now.day} {months[now.month-1]}"
+    day_month = f"{now.day} {months[now.month-1]}"
     
-    history = get_git_info("history.txt", now.strftime("%m-%d"))
-    names = get_git_info("names.txt", day_month_text)
-
     msg = (
         f"📅 **РАНКОВИЙ ЗВІТ ({now.strftime('%d.%m.%Y')})**\n\n"
         f"🌡 **Погода:**\n{get_weather()}\n\n"
         f"💰 **Курс валют (Мінфін):**\n{parse_currency()}\n\n"
-        f"😇 **Іменини:**\n{now.strftime('%d.%m')}: {names}\n\n"
-        f"📜 **Історія:**\n{history}\n\n"
+        f"😇 **Іменини:**\n{now.strftime('%d.%m')}: {get_git_info('names.txt', day_month)}\n\n"
+        f"📜 **Історія:**\n{get_git_info('history.txt', now.strftime('%m-%d'))}\n\n"
         f"✨ **Гороскоп:**\n"
         f"♈ Овен: Будьте обережні з фінансами.\n♉ Телець: Зосередьтесь на головному.\n"
         f"♊ Близнюки: Час для відпочинку.\n♋ Рак: Слухайте інтуїцію.\n"
