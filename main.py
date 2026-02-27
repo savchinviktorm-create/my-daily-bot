@@ -10,10 +10,11 @@ CITY = "Kyiv"
 
 def get_data(url):
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)
         response.raise_for_status()
         return response.text
-    except:
+    except Exception as e:
+        print(f"Помилка завантаження даних: {e}")
         return None
 
 def get_file_info(file_name, search_key):
@@ -29,7 +30,7 @@ def get_file_info(file_name, search_key):
 def get_weather():
     url = f"http://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={WEATHER_API_KEY}&units=metric&lang=uk"
     try:
-        res = requests.get(url, timeout=10).json()
+        res = requests.get(url, timeout=15).json()
         temp = round(res["main"]["temp"])
         desc = res["weather"][0]["description"].capitalize()
         return f"{temp}°C, {desc}"
@@ -39,7 +40,7 @@ def get_weather():
 def get_currency():
     url = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json"
     try:
-        res = requests.get(url, timeout=10).json()
+        res = requests.get(url, timeout=15).json()
         usd = next(item for item in res if item["cc"] == "USD")["rate"]
         eur = next(item for item in res if item["cc"] == "EUR")["rate"]
         return f"🇺🇸 USD: {usd:.2f} | 🇪🇺 EUR: {eur:.2f}"
@@ -56,27 +57,24 @@ def send_message():
     weather = get_weather()
     currency = get_currency()
 
-    # Починаємо формувати повідомлення
-    message_parts = [f"📅 **Сьогодні {date_display}**\n"]
+    # Формування повідомлення через HTML (це надійніше за Markdown)
+    message_parts = [f"📅 <b>Сьогодні {date_display}</b>\n"]
 
-    # Додаємо іменини, тільки якщо вони є
     if names_list:
         message_parts.append(
-            f"😇 **В цей день свої іменини святкують:**\n{names_list}\n\n"
-            f"✨ _Не забудь привітати близьких, якщо серед твого оточення є люди з такими іменами. Їм буде приємно!_"
+            f"😇 <b>В цей день свої іменини святкують:</b>\n{names_list}\n\n"
+            f"✨ <i>Не забудь привітати близьких, якщо серед твого оточення є люди з такими іменами. Їм буде приємно!</i>"
         )
 
-    # Додаємо історію, тільки якщо вона є
     if history_note:
-        message_parts.append(f"🕰 **Цей день в історії:**\n{history_note}")
+        message_parts.append(f"🕰 <b>Цей день в історії:</b>\n{history_note}")
 
-    # Додаємо погоду та курс одним блоком в кінці
     if weather or currency:
-        meta_info = "--- \n"
+        meta_info = "──────────────────\n"
         if weather:
-            meta_info += f"🌤 **Погода:** {weather}\n"
+            meta_info += f"🌤 <b>Погода:</b> {weather}\n"
         if currency:
-            meta_info += f"💰 **Курс валют (НБУ):**\n{currency}"
+            meta_info += f"💰 <b>Курс валют (НБУ):</b>\n{currency}"
         message_parts.append(meta_info)
 
     full_message = "\n\n".join(message_parts)
@@ -85,10 +83,16 @@ def send_message():
     payload = {
         "chat_id": CHAT_ID, 
         "text": full_message, 
-        "parse_mode": "Markdown",
+        "parse_mode": "HTML",
         "disable_web_page_preview": True
     }
-    requests.post(url, data=payload)
+    
+    # Виводимо результат у лог GitHub для діагностики
+    response = requests.post(url, data=payload)
+    if response.status_code == 200:
+        print("✅ Повідомлення успішно надіслано!")
+    else:
+        print(f"❌ Помилка Telegram: {response.status_code} - {response.text}")
 
 if __name__ == "__main__":
     send_message()
