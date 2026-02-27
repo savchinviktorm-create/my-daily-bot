@@ -1,24 +1,29 @@
 name: Daily Report
+
 on:
   schedule:
+    # Запуск кожного дня о 05:30 та 12:00 за UTC
     - cron: '30 5 * * *'
+    - cron: '0 12 * * *'
   push:
     branches: [ main ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install dependencies
-        run: pip install requests
-      - name: Run script
+
+      - name: Run Telegram Bot Script
         env:
           TOKEN: ${{ secrets.TOKEN }}
           MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
+          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
         run: python main.py
