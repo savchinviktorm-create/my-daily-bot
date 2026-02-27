@@ -17,52 +17,45 @@ def get_raw_data(url):
 def parse_currency():
     data = get_raw_data(URL_CURRENCY_TABLE)
     if not data:
-        return "❌ Не вдалося завантажити дані з таблиці"
+        return "❌ Не вдалося завантажити таблицю"
     
-    # Розбиваємо таблицю на рядки та елементи
     lines = [line.split(',') for line in data.splitlines()]
     
-    usd_bank = "немає даних"
-    eur_bank = "немає даних"
-    usd_black = "немає даних"
-    eur_black = "немає даних"
+    # Створюємо словник для знайдених значень
+    res = {"USD_B": "?", "USD_S": "?", "EUR_B": "?", "EUR_S": "?"}
     
     def clean(val):
         return val.replace('"', '').strip()
 
     try:
         for row in lines:
-            if len(row) < 2: continue
+            if len(row) < 3: continue
             
-            # Шукаємо USD у першому стовпці (Банки)
+            # Якщо в рядку є "USD" (зазвичай row[0])
             if clean(row[0]) == "USD":
-                usd_bank = f"{clean(row[1])} / {clean(row[2])}"
-                # Якщо в цьому ж рядку є дані обмінників (стовпці F, G)
-                if len(row) > 6 and clean(row[5]) != "":
-                    usd_black = f"{clean(row[5])} / {clean(row[6])}"
-            
-            # Шукаємо EUR у першому стовпці (Банки)
+                # Склеюємо копійки, якщо вони вилетіли в інший стовпець через кому
+                # Банки Купівля (B) і Продаж (S)
+                res["USD_B"] = f"{clean(row[1])}.{clean(row[2])}" if clean(row[2]).isdigit() else clean(row[1])
+                res["USD_S"] = f"{clean(row[3])}.{clean(row[4])}" if len(row) > 4 and clean(row[4]).isdigit() else clean(row[3])
+                
+            # Якщо в рядку є "EUR"
             if clean(row[0]) == "EUR":
-                eur_bank = f"{clean(row[1])} / {clean(row[2])}"
-                # Якщо в наступних стовпцях є євро обмінників
-                if len(row) > 6 and clean(row[5]) != "":
-                    eur_black = f"{clean(row[5])} / {clean(row[6])}"
+                res["EUR_B"] = f"{clean(row[1])}.{clean(row[2])}" if clean(row[2]).isdigit() else clean(row[1])
+                res["EUR_S"] = f"{clean(row[3])}.{clean(row[4])}" if len(row) > 4 and clean(row[4]).isdigit() else clean(row[3])
 
-        # Рахуємо крос-курс прямо тут (EUR купівля / USD купівля)
+        # Розрахунок крос-курсу
         try:
-            e_val = float(eur_bank.split('/')[0].replace(',', '.').strip())
-            u_val = float(usd_bank.split('/')[0].replace(',', '.').strip())
-            cross = round(e_val / u_val, 3)
+            cross = round(float(res["EUR_B"]) / float(res["USD_B"]), 3)
         except:
-            cross = "не розраховано"
+            cross = "немає даних"
 
         return (
-            f"🇺🇸 **USD:** Банки: {usd_bank} | Обмін: {usd_black}\n"
-            f"🇪🇺 **EUR:** Банки: {eur_bank} | Обмін: {eur_black}\n"
+            f"🇺🇸 **USD:** {res['USD_B']} / {res['USD_S']}\n"
+            f"🇪🇺 **EUR:** {res['EUR_B']} / {res['EUR_S']}\n"
             f"💱 **Крос-курс EUR/USD:** {cross}"
         )
     except:
-        return "⚠️ Помилка обробки структури таблиці"
+        return "⚠️ Помилка обробки цифр у таблиці"
 
 def get_weather():
     api_key = os.getenv('WEATHER_API_KEY')
@@ -81,7 +74,6 @@ def send_report():
     chat_id = os.getenv('MY_CHAT_ID')
     now = datetime.now()
     
-    # Дані з GitHub файлів (іменини, історія)
     months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
     history_url = "https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/history.txt"
     names_url = "https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/names.txt"
