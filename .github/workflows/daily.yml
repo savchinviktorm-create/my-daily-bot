@@ -1,13 +1,9 @@
 name: Daily Channel Content
 
 on:
-  schedule:
-    # Час вказано по UTC (Київ -2 години взимку)
-    - cron: '0 6 * * *'  # 08:00 за Києвом (Ранок)
-    - cron: '0 9 * * *'  # 11:00 за Києвом (Цитата)
-    - cron: '0 12 * * *' # 14:00 за Києвом (Лайфхак)
-    - cron: '0 18 * * *' # 20:00 за Києвом (Вечір)
-  workflow_dispatch:      # Кнопка для ручного тесту
+  workflow_dispatch:      # Дозволяє запускати бота вручну кнопкою
+  repository_dispatch:    # Дозволяє сервісу cron-job.org запускати бота
+    types: [run_bot]
 
 jobs:
   build:
@@ -22,7 +18,8 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: pip install requests
+        # Встановлюємо бібліотеки для запитів та для роботи з київським часом
+        run: pip install requests pytz
 
       - name: Run logic
         env:
