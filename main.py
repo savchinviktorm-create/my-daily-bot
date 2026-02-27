@@ -2,52 +2,48 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import json
+import re
 from datetime import datetime
 
-def get_currency_data():
-    """Парсинг курсу з https://minfin.com.ua/ua/currency/"""
+def get_soup(url):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'}
     try:
-        url = "https://minfin.com.ua/ua/currency/"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Шукаємо таблицю середнього курсу
-        table = soup.find('table', class_='mfcur-table-bank')
-        rows = table.find_all('tr')
-        
-        data = {"usd": "н/д", "eur": "н/д", "usd_val": 0, "eur_val": 0}
-        
-        for row in rows:
-            text = row.text.upper()
-            cols = row.find_all('td')
-            if len(cols) > 1:
-                # Очищуємо текст від зайвих пробілів та символів
-                val_text = cols[1].text.replace('\xa0', ' ').strip().split()
-                if "USD" in text:
-                    data["usd"] = f"{val_text[0]} / {val_text[1]}"
-                    data["usd_val"] = float(val_text[0].replace(',', '.'))
-                elif "EUR" in text:
-                    data["eur"] = f"{val_text[0]} / {val_text[1]}"
-                    data["eur_val"] = float(val_text[0].replace(',', '.'))
-        return data
-    except:
-        return None
+        r = requests.get(url, headers=headers, timeout=15)
+        r.encoding = 'utf-8'
+        return BeautifulSoup(r.text, 'html.parser')
+    except: return None
 
-def get_fuel_data():
-    """Парсинг пального з https://index.minfin.com.ua/ua/markets/fuel/"""
-    try:
-        url = "https://index.minfin.com.ua/ua/markets/fuel/"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Знаходимо таблицю з середніми цінами
-        table = soup.find('table', class_='list')
+def parse_currency():
+    soup = get_soup("https://minfin.com.ua/ua/currency/")
+    res = {"usd": "немає даних", "eur": "немає даних", "u_val": 0.0, "e_val": 0.0}
+    if not soup: return res
+    
+    # Шукаємо таблицю середніх курсів
+    table = soup.find('table', class_='mfcur-table-bank')
+    if table:
         rows = table.find_all('tr')
-        
-        fuel = {"a95": "н/д", "dp": "н/д", "gas": "н/д"}
         for row in rows:
+            row_text = row.text.upper()
+            cols = row.find_all('td')
+            if len(cols) >= 2:
+                # Витягуємо числа (купівля та продаж)
+                vals = re.findall(r'\d+,\d+', cols[1].text)
+                if "USD" in row_text and len(vals) >= 2:
+                    res["usd"] = f"{vals[0]} / {vals[1]}"
+                    res["u_val"] = float(vals[0].replace(',', '.'))
+                elif "EUR" in row_text and len(vals) >= 2:
+                    res["eur"] = f"{vals[0]} / {vals[1]}"
+                    res["e_val"] = float(vals[0].replace(',', '.'))
+    return res
+
+def parse_fuel():
+    soup = get_soup("https://index.minfin.com.ua/ua/markets/fuel/")
+    fuel = {"a95": "н/д", "dp": "н/д", "gas": "н/д"}
+    if not soup: return fuel
+    
+    table = soup.find('table', class_='list')
+    if table:
+        for row in table.find_all('tr'):
             cols = row.find_all('td')
             if len(cols) >= 2:
                 name = cols[0].text.strip()
@@ -55,52 +51,50 @@ def get_fuel_data():
                 if name == "A-95": fuel["a95"] = price
                 elif name == "ДП": fuel["dp"] = price
                 elif name == "Газ": fuel["gas"] = price
-        return fuel
-    except:
-        return None
+    return fuel
 
-def get_git_info(file_name, search_key):
+def get_git_info(file_name, key):
     url = f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file_name}"
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             for line in r.text.splitlines():
-                if search_key.lower() in line.lower():
+                if key.lower() in line.lower():
                     return line.split('—', 1)[-1].strip() if '—' in line else line.strip()
     except: pass
-    return "дані відсутні"
+    return "немає даних"
 
 def send_report():
-    curr = get_currency_data()
-    fuel = get_fuel_data()
+    curr = parse_currency()
+    fuel = parse_fuel()
     now = datetime.now()
     
-    # Розрахунок крос-курсу
-    cross = round(curr['eur_val'] / curr['usd_val'], 3) if curr and curr['usd_val'] > 0 else "н/д"
+    # Крос-курс (ділимо купівлю євро на купівлю долара)
+    cross = round(curr['e_val'] / curr['u_val'], 3) if curr['u_val'] > 0 else "н/д"
     
-    # Дата для іменин
     months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
-    day_month = f"{now.day} {months[now.month-1]}"
+    day_name = f"{now.day} {months[now.month-1]}" # Для іменин: "27 лютого"
+    day_str = now.strftime("%d.%m") # Для історії: "27.02"
 
     msg = (
         f"📅 **ЗВІТ НА {now.strftime('%d.%m.%Y')}**\n\n"
         f"💰 **Курс валют (Мінфін):**\n"
-        f"🇺🇸 USD: {curr['usd'] if curr else 'помилка'}\n"
-        f"🇪🇺 EUR: {curr['eur'] if curr else 'помилка'}\n"
+        f"🇺🇸 USD: {curr['usd']}\n"
+        f"🇪🇺 EUR: {curr['eur']}\n"
         f"💱 Крос-курс: {cross}\n\n"
-        f"⛽ **Ціни на пальне (Мінфін):**\n"
-        f"🔹 А-95: {fuel['a95'] if fuel else 'н/д'} грн\n"
-        f"🔹 ДП: {fuel['dp'] if fuel else 'н/д'} грн\n"
-        f"🔹 Газ: {fuel['gas'] if fuel else 'н/д'} грн\n\n"
-        f"😇 **Іменини сьогодні:**\n{get_git_info('names.txt', day_month)}\n\n"
-        f"📜 **Цей день в історії:**\n{get_git_info('history.txt', now.strftime('%m-%d'))}\n\n"
+        f"⛽ **Ціни на пальне (Середні):**\n"
+        f"🔹 А-95: {fuel['a95']} грн\n"
+        f"🔹 ДП: {fuel['dp']} грн\n"
+        f"🔹 Газ: {fuel['gas']} грн\n\n"
+        f"😇 **Іменини:** {get_git_info('names.txt', day_name)}\n"
+        f"📜 **Історія:** {get_git_info('history.txt', day_str)}\n\n"
         f"🎄 До Нового року: {(datetime(now.year + 1, 1, 1) - now).days} днів!"
     )
 
     token = os.getenv('TOKEN')
     chat_id = os.getenv('MY_CHAT_ID')
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
+    requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
+                  json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
 
 if __name__ == "__main__":
     send_report()
