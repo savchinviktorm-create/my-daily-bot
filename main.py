@@ -1,9 +1,10 @@
 import os
 import urllib.request
 import json
+import re
 from datetime import datetime
 
-# Твоє пряме посилання на CSV
+# Пряме посилання на ваш CSV
 URL_CURRENCY_TABLE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSExxHF9GN-lpJF9I3L9kLzFoH9lo4_emwtiEoHpiezlf3ESOw6dxGrjmQwk1wuFC6mV6035wu6-l4M/pub?gid=2060076239&single=true&output=csv"
 
 def get_raw_data(url):
@@ -18,33 +19,47 @@ def parse_currency():
     if not raw_data: return "❌ Помилка завантаження таблиці"
     
     lines = raw_data.splitlines()
-    try:
-        def c(v): return v.replace('"', '').strip()
+    usd_res, eur_res = "немає даних", "немає даних"
+    u_buy, e_buy = 0.0, 0.0
 
-        # USD - Рядок 3 (індекс 2) за посиланням
-        row_usd = lines[2].split(',')
-        u_buy = f"{c(row_usd[1])}.{c(row_usd[2])[:2]}" # Склеюємо 43 + 00
-        u_sale = f"{c(row_usd[3])}.{c(row_usd[4])[:2]}"
-        
-        # EUR - Рядок 16 (індекс 15) за посиланням
-        row_eur = lines[15].split(',')
-        e_buy = f"{c(row_eur[1])}.{c(row_eur[2])[:2]}"
-        e_sale = f"{c(row_eur[3])}.{c(row_eur[4])[:2]}"
+    try:
+        for line in lines:
+            # Прибираємо лапки та розбиваємо по комі
+            parts = [p.strip().replace('"', '') for p in line.split(',')]
+            # Фільтруємо лише непорожні елементи, які містять цифри або назву валюти
+            content = [p for p in parts if p]
+            
+            if not content: continue
+
+            # Шукаємо USD (зазвичай це рядок, де перше слово USD)
+            if content[0] == "USD" and len(content) >= 3:
+                # content[1] - ціла частина купівлі, content[2] - копійки купівлі
+                # content[3] - ціла частина продажу, content[4] - копійки продажу
+                u_buy_val = f"{content[1]}.{content[2][:2]}"
+                u_sale_val = f"{content[3]}.{content[4][:2]}"
+                u_buy = float(u_buy_val)
+                usd_res = f"{u_buy_val} / {u_sale_val}"
+
+            # Шукаємо EUR
+            if content[0] == "EUR" and len(content) >= 3:
+                e_buy_val = f"{content[1]}.{content[2][:2]}"
+                e_sale_val = f"{content[3]}.{content[4][:2]}"
+                e_buy = float(e_buy_val)
+                eur_res = f"{e_buy_val} / {e_sale_val}"
 
         # Крос-курс
-        cross = round(float(e_buy) / float(u_buy), 3)
+        cross = round(e_buy / u_buy, 3) if u_buy > 0 else "немає даних"
 
         return (
-            f"🇺🇸 **USD:** {u_buy} / {u_sale}\n"
-            f"🇪🇺 **EUR:** {e_buy} / {e_sale}\n"
+            f"🇺🇸 **USD:** {usd_res}\n"
+            f"🇪🇺 **EUR:** {eur_res}\n"
             f"💱 **Крос-курс EUR/USD:** {cross}"
         )
-    except:
+    except Exception as e:
         return "⚠️ Дані в таблиці оновлюються..."
 
 def get_weather():
     api_key = os.getenv('WEATHER_API_KEY')
-    # Додав дві локації, як було в кращих версіях
     locs = [("Головецько", "lat=49.20&lon=23.45"), ("Львів", "q=Lviv")]
     reports = []
     for name, p in locs:
@@ -59,7 +74,8 @@ def get_git_info(file_name, search_key):
     url = f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file_name}"
     data = get_raw_data(url)
     if data:
-        for line in data.splitlines():
+        lines = data.splitlines()
+        for line in lines:
             if search_key.lower() in line.lower():
                 return line.split('—', 1)[-1].strip() if '—' in line else line.split(':', 1)[-1].strip()
     return "немає даних"
@@ -72,7 +88,6 @@ def send_report():
     months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
     day_month = f"{now.day} {months[now.month-1]}"
     
-    # Отримуємо дані з твоїх файлів
     history = get_git_info('history.txt', now.strftime('%m-%d'))
     names = get_git_info('names.txt', day_month)
 
