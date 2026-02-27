@@ -3,95 +3,80 @@ import urllib.request
 import json
 from datetime import datetime
 
-def get_data_from_url(url, is_json=True):
+def get_data(url):
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=10) as response:
-            content = response.read().decode('utf-8')
-            return json.loads(content) if is_json else content
-    except:
-        return None
+            return response.read().decode('utf-8')
+    except: return None
+
+def get_weather():
+    api_key = os.getenv('WEATHER_API_KEY')
+    # Головецько (через координати для точності) та Львів
+    locations = [
+        {"name": "Головецько", "url": f"http://api.openweathermap.org/data/2.5/weather?lat=49.20&lon=23.45&appid={api_key}&units=metric&lang=uk"},
+        {"name": "Львів", "url": f"http://api.openweathermap.org/data/2.5/weather?q=Lviv&appid={api_key}&units=metric&lang=uk"}
+    ]
+    reports = []
+    for loc in locations:
+        raw = get_data(loc['url'])
+        if raw:
+            data = json.loads(raw)
+            temp = round(data['main']['temp'])
+            desc = data['weather'][0]['description']
+            reports.append(f"📍 {loc['name']}: {temp}°C, {desc.capitalize()}")
+    return "\n".join(reports) if reports else "Дані про погоду відсутні"
+
+def get_currency():
+    raw = get_data("https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11")
+    if raw:
+        data = json.loads(raw)
+        res = []
+        for c in data:
+            if c['ccy'] in ['EUR', 'USD']:
+                res.append(f"💵 {c['ccy']}: {round(float(c['buy']), 2)}/{round(float(c['sale']), 2)}")
+        return "\n".join(sorted(res))
+    return "Немає даних"
 
 def get_history():
     today = datetime.now().strftime("%m-%d")
     url = "https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/history.txt"
-    data = get_data_from_url(url, is_json=False)
+    data = get_data(url)
     if data:
         for line in data.splitlines():
             if line.startswith(today):
                 return line.split(':', 1)[1].strip()
-    return "Інформація про події дня відсутня."
+    return "27.02: день без подій"
 
-def get_weather():
-    api_key = os.getenv('WEATHER_API_KEY')
-    # Додано обидва міста: Головецько та Львів
-    cities = {"Holovets'ko": "Головецько", "Lviv": "Львів"}
-    res = []
-    for eng, ukr in cities.items():
-        data = get_data_from_url(f"http://api.openweathermap.org/data/2.5/weather?q={eng}&appid={api_key}&units=metric&lang=uk")
-        if data:
-            temp = round(data['main']['temp'])
-            desc = data['weather'][0]['description']
-            res.append(f"📍 {ukr}: {temp}°C, {desc}")
-    return "\n".join(res) if res else "Дані про погоду недоступні"
-
-def get_currency():
-    data = get_data_from_url("https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11")
-    if data:
-        lines = []
-        for c in data:
-            if c['ccy'] in ['USD', 'EUR']:
-                buy = round(float(c['buy']), 2)
-                sale = round(float(c['sale']), 2)
-                lines.append(f"💵 {c['ccy']}: {buy}/{sale}")
-        return "\n".join(lines)
-    return "Курс тимчасово недоступний"
-
-def get_days_to_new_year():
-    now = datetime.now()
-    ny = datetime(now.year + 1, 1, 1)
-    delta = ny - now
-    return delta.days
-
-def get_horoscope():
-    # Повний список знаків для структури
-    return (
-        "♈ Овен: Будьте обережні з фінансами.\n"
-        "♉ Телець: Зосередьтесь на головному.\n"
-        "♊ Близнюки: Час для відпочинку.\n"
-        "♋ Рак: Слухайте інтуїцію.\n"
-        "♌ Лев: Вдалий день для починань.\n"
-        "♍ Діва: Зверніть увагу на деталі.\n"
-        "♎ Терези: Гармонія у всьому.\n"
-        "♏ Скорпіон: Енергійний день.\n"
-        "♐ Стрілець: Нові можливості.\n"
-        "♑ Козоріг: Стійкість принесе успіх.\n"
-        "♒ Водолій: Час для креативу.\n"
-        "♓ Риби: День для роздумів."
-    )
-
-def send_full_report():
+def send_main():
     token = os.getenv('TOKEN')
     chat_id = os.getenv('MY_CHAT_ID')
-    date_str = datetime.now().strftime("%d.%m.%Y")
-    
+    date_now = datetime.now().strftime("%d.%m.%Y")
+    days_left = (datetime(datetime.now().year + 1, 1, 1) - datetime.now()).days
+
     message = (
-        f"📅 **РАНКОВИЙ ЗВІТ ({date_str})**\n\n"
+        f"📅 **РАНКОВИЙ ЗВІТ ({date_now})**\n\n"
         f"🌡 **Погода:**\n{get_weather()}\n\n"
         f"💰 **Курс валют:**\n{get_currency()}\n\n"
-        f"😇 **Іменини:**\n{datetime.now().strftime('%d.%m')}: Кирило, Михайло, Федір\n\n"
+        f"😇 **Іменини:**\n27.02: Кирило, Михайло, Федір\n\n"
         f"📜 **Історія:**\n{get_history()}\n\n"
-        f"✨ **Гороскоп:**\n{get_horoscope()}\n\n"
+        f"✨ **Гороскоп:**\n"
+        f"♈ Овен: Будьте обережні з фінансами.\n♉ Телець: Зосередьтесь на головному.\n"
+        f"♊ Близнюки: Час для відпочинку.\n♋ Рак: Слухайте інтуїцію.\n"
+        f"♌ Лев: Вдалий день для починань.\n♍ Діва: Зверніть увагу на деталі.\n"
+        f"♎ Терези: Гармонія у всьому.\n♏ Скорпіон: Енергійний день.\n"
+        f"♐ Стрілець: Нові можливості.\n♑ Козоріг: Стійкість принесе успіх.\n"
+        f"♒ Водолій: Час для креативу.\n♓ Риби: День для роздумів.\n\n"
         f"💡 **Цитата дня:**\n\"Хтось сидить у тіні сьогодні, тому що хтось давно посадив дерево.\" (Воррен Баффет)\n\n"
         f"😂 **Анекдот:**\n— Василю Івановичу, поїхали до міста, там виставка голографії йде!\n— Ні, Петько, на біса мені на голих графів дивитися?\n\n"
-        f"🎄 До Нового року: {get_days_to_new_year()} днів!\n\n"
+        f"🎄 До Нового року: {days_left} днів!\n\n"
         f"⛽ **Ціни на пальне:**\nА-95: 56.15 грн\nДП: 52.30 грн"
     )
-    
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps({"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}).encode('utf-8')
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    req = urllib.request.Request(send_url, data=payload, headers={'Content-Type': 'application/json'})
     urllib.request.urlopen(req)
 
 if __name__ == "__main__":
-    send_full_report()
+    send_main()
