@@ -1,11 +1,12 @@
 import requests
 import random
+import io
 from datetime import datetime
 
 # Дані підключення
 TOKEN = "8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY"
 CHAT_ID = "653398188"
-# Пряме посилання на папку з картинками
+# Шлях до Raw файлів на GitHub
 GITHUB_MEDIA_BASE = "https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/media/morning/"
 
 def get_text_from_github(file_name, date_key):
@@ -23,19 +24,19 @@ def send_morning_post():
     now = datetime.now()
     date_key = now.strftime("%m-%d")
     
-    # 1. Збір текстових даних
+    # 1. Текст
     names = get_text_from_github("names.txt", date_key)
     history = get_text_from_github("history.txt", date_key)
     days_to_ny = (datetime(now.year + 1, 1, 1) - now).days
     
-    # 2. Курс валют
+    # 2. Валюта
     try:
         cur = requests.get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json").json()
         usd = next(x for x in cur if x["cc"] == "USD")["rate"]
         currency = f"💵 <b>Курс валют:</b> USD {usd:.2f}"
     except: currency = ""
 
-    # 3. Формування тексту (чистий стиль)
+    # 3. Формування тексту
     message_parts = [f"☀️ <b>Доброго ранку! Сьогодні {now.strftime('%d.%m')}</b>"]
     if currency: message_parts.append(currency)
     if names: message_parts.append(f"😇 <b>День ангела:</b> {names}")
@@ -44,26 +45,28 @@ def send_morning_post():
     
     full_text = "\n\n".join(message_parts)
 
-    # 4. Вибір випадкової картинки (від 1 до 26)
+    # 4. Вибір картинки та завантаження її в пам'ять
     img_number = random.randint(1, 26)
     image_url = f"{GITHUB_MEDIA_BASE}{img_number}.png"
-
-    # 5. Відправка фото з текстом
-    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-    payload = {
-        "chat_id": CHAT_ID,
-        "photo": image_url,
-        "caption": full_text,
-        "parse_mode": "HTML"
-    }
     
-    r = requests.post(url, data=payload)
-    
-    if r.status_code == 200:
-        print(f"✅ Успішно надіслано пост із картинкою #{img_number}")
-    else:
-        # Якщо картинка не знайшлась, шлемо просто текст
-        print(f"❌ Помилка медіа: {r.text}. Надсилаю текст.")
+    try:
+        # Завантажуємо картинку з GitHub
+        img_response = requests.get(image_url)
+        if img_response.status_code == 200:
+            photo = io.BytesIO(img_response.content)
+            photo.name = f"{img_number}.png"
+            
+            # Відправляємо як файл
+            url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+            files = {"photo": photo}
+            data = {"chat_id": CHAT_ID, "caption": full_text, "parse_mode": "HTML"}
+            r = requests.post(url, files=files, data=data)
+            print(f"✅ Пост із картинкою #{img_number} надіслано!")
+        else:
+            raise Exception("Картинку не знайдено на GitHub")
+            
+    except Exception as e:
+        print(f"❌ Помилка: {e}. Надсилаю тільки текст.")
         requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
                       data={"chat_id": CHAT_ID, "text": full_text, "parse_mode": "HTML"})
 
