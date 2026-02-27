@@ -5,96 +5,83 @@ import json
 import re
 from datetime import datetime
 
-def get_soup(url):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'}
+def get_content(url):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7'
+    }
     try:
-        r = requests.get(url, headers=headers, timeout=15)
-        r.encoding = 'utf-8'
-        return BeautifulSoup(r.text, 'html.parser')
-    except: return None
+        r = requests.get(url, headers=headers, timeout=20)
+        return r.text
+    except: return ""
 
 def parse_currency():
-    soup = get_soup("https://minfin.com.ua/ua/currency/")
+    html = get_content("https://minfin.com.ua/ua/currency/")
     res = {"usd": "немає даних", "eur": "немає даних", "u_val": 0.0, "e_val": 0.0}
-    if not soup: return res
+    if not html: return res
     
-    # Шукаємо таблицю середніх курсів
-    table = soup.find('table', class_='mfcur-table-bank')
-    if table:
-        rows = table.find_all('tr')
-        for row in rows:
-            row_text = row.text.upper()
-            cols = row.find_all('td')
-            if len(cols) >= 2:
-                # Витягуємо числа (купівля та продаж)
-                vals = re.findall(r'\d+,\d+', cols[1].text)
-                if "USD" in row_text and len(vals) >= 2:
-                    res["usd"] = f"{vals[0]} / {vals[1]}"
-                    res["u_val"] = float(vals[0].replace(',', '.'))
-                elif "EUR" in row_text and len(vals) >= 2:
-                    res["eur"] = f"{vals[0]} / {vals[1]}"
-                    res["e_val"] = float(vals[0].replace(',', '.'))
+    # Шукаємо курси за допомогою регулярних виразів прямо в тексті
+    usd = re.findall(r'USD.*?(\d+,\d+).*?(\d+,\d+)', html, re.DOTALL)
+    eur = re.findall(r'EUR.*?(\d+,\d+).*?(\d+,\d+)', html, re.DOTALL)
+    
+    if usd:
+        res["usd"] = f"{usd[0][0]} / {usd[0][1]}"
+        res["u_val"] = float(usd[0][0].replace(',', '.'))
+    if eur:
+        res["eur"] = f"{eur[0][0]} / {eur[0][1]}"
+        res["e_val"] = float(eur[0][0].replace(',', '.'))
     return res
 
 def parse_fuel():
-    soup = get_soup("https://index.minfin.com.ua/ua/markets/fuel/")
+    html = get_content("https://index.minfin.com.ua/ua/markets/fuel/")
     fuel = {"a95": "н/д", "dp": "н/д", "gas": "н/д"}
-    if not soup: return fuel
+    if not html: return fuel
     
-    table = soup.find('table', class_='list')
-    if table:
-        for row in table.find_all('tr'):
-            cols = row.find_all('td')
-            if len(cols) >= 2:
-                name = cols[0].text.strip()
-                price = cols[1].text.strip()
-                if name == "A-95": fuel["a95"] = price
-                elif name == "ДП": fuel["dp"] = price
-                elif name == "Газ": fuel["gas"] = price
+    soup = BeautifulSoup(html, 'html.parser')
+    rows = soup.find_all('tr')
+    for row in rows:
+        t = row.text
+        if "A-95" in t and "Плюс" not in t:
+            fuel["a95"] = row.find_all('td')[1].text.strip()
+        elif "ДП" in t:
+            fuel["dp"] = row.find_all('td')[1].text.strip()
+        elif "Газ" in t:
+            fuel["gas"] = row.find_all('td')[1].text.strip()
     return fuel
 
-def get_git_info(file_name, key):
-    url = f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file_name}"
+def get_git_info(file, key):
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(f"https://raw.githubusercontent.com/savchinviktorm-create/my-daily-bot/main/{file}")
         if r.status_code == 200:
-            for line in r.text.splitlines():
+            lines = r.text.splitlines()
+            for line in lines:
                 if key.lower() in line.lower():
-                    return line.split('—', 1)[-1].strip() if '—' in line else line.strip()
+                    return line.split('—')[-1].strip() if '—' in line else line.strip()
     except: pass
-    return "немає даних"
+    return "дані відсутні"
 
-def send_report():
+def send():
     curr = parse_currency()
     fuel = parse_fuel()
     now = datetime.now()
     
-    # Крос-курс (ділимо купівлю євро на купівлю долара)
     cross = round(curr['e_val'] / curr['u_val'], 3) if curr['u_val'] > 0 else "н/д"
     
-    months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
-    day_name = f"{now.day} {months[now.month-1]}" # Для іменин: "27 лютого"
-    day_str = now.strftime("%d.%m") # Для історії: "27.02"
+    m_ukr = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"]
+    day_name = f"{now.day} {m_ukr[now.month-1]}"
+    day_hist = now.strftime("%m-%d") # Спробуємо такий формат для історії
 
     msg = (
         f"📅 **ЗВІТ НА {now.strftime('%d.%m.%Y')}**\n\n"
-        f"💰 **Курс валют (Мінфін):**\n"
-        f"🇺🇸 USD: {curr['usd']}\n"
-        f"🇪🇺 EUR: {curr['eur']}\n"
-        f"💱 Крос-курс: {cross}\n\n"
-        f"⛽ **Ціни на пальне (Середні):**\n"
-        f"🔹 А-95: {fuel['a95']} грн\n"
-        f"🔹 ДП: {fuel['dp']} грн\n"
-        f"🔹 Газ: {fuel['gas']} грн\n\n"
+        f"💰 **Курс валют (Мінфін):**\n🇺🇸 USD: {curr['usd']}\n🇪🇺 EUR: {curr['eur']}\n💱 Крос-курс: {cross}\n\n"
+        f"⛽ **Пальне:**\n🔹 А-95: {fuel['a95']} грн\n🔹 ДП: {fuel['dp']} грн\n🔹 Газ: {fuel['gas']} грн\n\n"
         f"😇 **Іменини:** {get_git_info('names.txt', day_name)}\n"
-        f"📜 **Історія:** {get_git_info('history.txt', day_str)}\n\n"
+        f"📜 **Історія:** {get_git_info('history.txt', day_hist)}\n\n"
         f"🎄 До Нового року: {(datetime(now.year + 1, 1, 1) - now).days} днів!"
     )
 
-    token = os.getenv('TOKEN')
-    chat_id = os.getenv('MY_CHAT_ID')
-    requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
-                  json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
+    requests.post(f"https://api.telegram.org/bot{os.getenv('TOKEN')}/sendMessage", 
+                  json={"chat_id": os.getenv('MY_CHAT_ID'), "text": msg, "parse_mode": "Markdown"})
 
 if __name__ == "__main__":
-    send_report()
+    send()
