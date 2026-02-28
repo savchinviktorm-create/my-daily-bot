@@ -4,11 +4,12 @@ import datetime
 import os
 import pytz
 
-# --- КРОК 3: НАЛАШТУВАННЯ (БЕРУТЬСЯ З GITHUB SECRETS) ---
-# Ми використовуємо os.environ.get, щоб GitHub міг передати токен та ID каналу в код
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-TMDB_API_KEY = "583e99233cb332aaf8ab0ded7a92dde7"
+# --- НАЛАШТУВАННЯ (ЗМІНЕНО ДЛЯ РОБОТИ З GITHUB SECRETS) ---
+TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "583e99233cb332aaf8ab0ded7a92dde7")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY")
+# Бот спочатку шукає CHAT_ID у Secrets, якщо не знаходить — бере твій старий ID
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "653398188")
+# ---------------------------------------------------------
 
 KIEV_TZ = pytz.timezone('Europe/Kiev')
 
@@ -20,7 +21,6 @@ def send_telegram(text, photo_path=None):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         with open(photo_path, 'rb') as photo:
             payload = {"chat_id": TELEGRAM_CHAT_ID, "caption": text, "parse_mode": "HTML"}
-            # Використовуємо files для відправки фото
             files = {"photo": photo}
             r = requests.post(url, data=payload, files=files)
     else:
@@ -37,7 +37,7 @@ def get_currency_logic():
         usd_p = next(i for i in p if i['ccy'] == 'USD')
         eur_p = next(i for i in p if i['ccy'] == 'EUR')
         
-        # Монобанк
+        # Монобанк (840 - USD, 978 - EUR, 980 - UAH)
         m = requests.get("https://api.monobank.ua/bank/currency", timeout=10).json()
         usd_m = next(i for i in m if i['currencyCodeA'] == 840 and i['currencyCodeB'] == 980)
         eur_m = next(i for i in m if i['currencyCodeA'] == 978 and i['currencyCodeB'] == 980)
@@ -48,15 +48,18 @@ def get_currency_logic():
         avg_eur_buy = (float(eur_p['buy']) + float(eur_m['rateBuy'])) / 2
         avg_eur_sale = (float(eur_p['sale']) + float(eur_m['rateSell'])) / 2
         
+        # Крос-курс (USD/EUR) на основі середніх продажів
         cross_rate = avg_usd_sale / avg_eur_sale
         
         res += f"🇺🇸 USD: {avg_usd_buy:.2f}/{avg_usd_sale:.2f}\n"
         res += f"🇪🇺 EUR: {avg_eur_buy:.2f}/{avg_eur_sale:.2f}\n"
         res += f"⚖️ Крос-курс (USD/EUR): {cross_rate:.3f}\n"
         res += f"🏦 Приват: {usd_p['sale'][:5]} / 🐱 Моно: {usd_m['rateSell']}"
-    except Exception:
+    except Exception as e:
         res += "⚠️ Курс тимчасово недоступний"
     return res
+
+# --- ІНШІ ФУНКЦІЇ (БЕЗ ЗМІН) ---
 
 def get_random_image(folder):
     if not os.path.exists(folder): return None
@@ -92,4 +95,44 @@ def get_movie():
         page = random.randint(1, 10)
         url = f"https://api.themoviedb.org/3/movie/popular?api_key={TMDB_API_KEY}&language=uk-UA&page={page}"
         r = requests.get(url, timeout=10).json()
-        m = random.choice(r['results
+        m = random.choice(r['results'])
+        return f"🎬 <b>ВЕЧІРНІЙ КІНОЗАЛ</b>\n🎥 <b>{m.get('title')}</b>\n⭐ Рейтинг: {m.get('vote_average')}\n🍿 {m.get('overview')[:200]}..."
+    except: return "🎬 Час для кіно!"
+
+def make_post():
+    now = get_now()
+    hour = now.hour
+    
+    # 🌅 РАНОК (5:00 - 10:59)
+    if 5 <= hour < 11:
+        img = get_random_image("media/morning")
+        text = (f"🌅 <b>ДОБРОГО РАНКУ!</b>\n📅 Сьогодні: {now.strftime('%d.%m.%Y')}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🎂 Іменини: {get_data_by_date('history.txt')}\n"
+                f"🎉 Свята: {get_data_by_date('Holiday.txt')}\n"
+                f"📜 Цей день в історії: {get_data_by_date('Wiking.txt')}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"{get_currency_logic()}\n"
+                f"🎄 До Нового Року: {days_to_ny()} дн.\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"💡 Лайфхак: {get_random_lines('advices.txt')[0]}")
+        return text, img
+
+    # 🌙 ВЕЧІР (Після 20:00)
+    elif hour >= 20 or hour < 5:
+        img = get_random_image("media/evening")
+        a = get_random_lines('advices.txt')[0]
+        f = get_random_lines('facts.txt')[0]
+        j = get_random_lines('jokes.txt')[0]
+        text = f"🌙 <b>ЗАВЕРШЕННЯ ДНЯ</b>\n\n🛠 {a}\n\n🧐 {f}\n\n😂 {j}\n\n{get_movie()}"
+        return text, img
+
+    # 🌤 ДЕНЬ
+    else:
+        img = get_random_image("media/evening")
+        text = f"🌤 <b>ДЕННИЙ ВИПУСК</b>\n\n🛠 Порада: {get_random_lines('advices.txt')[0]}\n🧐 Факт: {get_random_lines('facts.txt')[0]}"
+        return text, img
+
+if __name__ == "__main__":
+    content, photo = make_post()
+    send_telegram(content, photo)
