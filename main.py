@@ -119,4 +119,14 @@ def make_post():
 
 if __name__ == "__main__":
     content, photo = make_post()
-    send_telegram(content, photo)
+    response = send_telegram(content, photo)
+    
+    # Це виведе результат роботи в логи GitHub Actions
+    print("--- ЗВІТ ПРО ВІДПРАВКУ ---")
+    print(f"Статус: {response.get('ok')}")
+    if not response.get('ok'):
+        print(f"Помилка від Telegram: {response.get('description')}")
+        print(f"Код помилки: {response.get('error_code')}")
+    else:
+        print("Повідомлення успішно прийняте сервером Telegram!")
+    print("--------------------------")
