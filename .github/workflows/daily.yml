@@ -1,28 +1,25 @@
-name: Daily Channel Content
+name: Daily Post
 
 on:
-  workflow_dispatch:      # Дозволяє запускати бота вручну кнопкою
-  repository_dispatch:    # Дозволяє сервісу cron-job.org запускати бота
-    types: [run_bot]
+  workflow_dispatch:  # Дозволяє запускати вручну кнопкою
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v2
         with:
           python-version: '3.9'
 
       - name: Install dependencies
-        # Встановлюємо бібліотеки для запитів та для роботи з київським часом
         run: pip install requests pytz
 
-      - name: Run logic
+      - name: Run bot
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python main.py
