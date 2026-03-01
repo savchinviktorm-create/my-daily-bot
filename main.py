@@ -36,18 +36,15 @@ def get_currency_logic():
     return res
 
 def get_data_by_date(filename):
-    """Шукає дані за форматом MM-DD (наприклад 03-01)"""
-    # Спробуємо знайти файл як з розширенням, так і без
     target_file = filename if os.path.exists(filename) else f"{filename}.txt"
-    if not os.path.exists(target_file): return "Файл не знайдено"
-    
+    if not os.path.exists(target_file): return "Дані відсутні"
     try:
-        today_str = get_now().strftime("%m-%d") # Для 1 березня видасть "03-01"
+        today_str = get_now().strftime("%m-%d")
         with open(target_file, 'r', encoding='utf-8') as f:
             for line in f:
                 if line.strip().startswith(today_str):
                     return line.strip()[5:].lstrip(' —-–:.').strip()
-        return "Дані на сьогодні відсутні"
+        return "Сьогодні без особливих подій"
     except: return "Помилка читання"
 
 def get_random_lines(filename):
@@ -77,51 +74,10 @@ def make_post():
         "Обійміть іменинників хоча б віртуально! 🤗", "Будьте першим, хто привітає сьогодні! 🥇", "Світ стає добрішим від вітань! 🌎"
     ]
 
-    # 30 заготовок для Лайфхаків/Фактів/Цитат
-    intros = [
-        "💡 <b>Тобі це допоможе:</b>", "🛠 <b>Спробуй цей лайфхак:</b>", "🧠 <b>А чи знав ти, що:</b>", "📝 <b>Варто занотувати:</b>",
-        "✨ <b>Цікава знахідка:</b>", "🎯 <b>Це спростить твоє життя:</b>", "🧐 <b>Лови круту ідею:</b>", "📎 <b>На замітку:</b>",
-        "🛡 <b>Корисна порада:</b>", "🔍 <b>Цікавий факт:</b>", "🔋 <b>Для твоєї продуктивності:</b>", "🌈 <b>Трохи мудрості:</b>",
-        "🔑 <b>Секрет успіху:</b>", "💎 <b>Цінна думка:</b>", "⚖️ <b>Важливо знати:</b>", "🛰 <b>Погляд під іншим кутом:</b>",
-        "🧪 <b>Перевірений метод:</b>", "🧩 <b>Маленька хитрість:</b>", "🧨 <b>Вибухова ідея:</b>", "🧿 <b>Для натхнення:</b>",
-        "🪁 <b>Легке рішення:</b>", "🧸 <b>Просто і геніально:</b>", "📡 <b>Інформація для тебе:</b>", "🧭 <b>Твій орієнтир:</b>",
-        "🎭 <b>Психологічний трюк:</b>", "🧘 <b>Для твого комфорту:</b>", "⚡️ <b>Швидка допомога:</b>", "⛲️ <b>Джерело знань:</b>",
-        "🚀 <b>Для твого розвитку:</b>", "🎬 <b>Факти, що вражають:</b>"
-    ]
-
-    names = get_data_by_date('history')
-    holidays = get_data_by_date('Holiday')
-    history = get_data_by_date('Wiking')
-    
-    # Випадковий вибір між порадою, фактом або жартом
-    chosen_file = random.choice(['advices', 'facts', 'jokes'])
-    random_info = get_random_lines(chosen_file)
-    
-    ny_days = (datetime.date(now.year + 1, 1, 1) - now.date()).days
-
-    text = (f"🌅 <b>ДОБРОГО РАНКУ!</b>\n"
-            f"📅 Сьогодні: <b>{now.strftime('%d.%m.%Y')}</b>\n"
-            f"{divider}\n"
-            f"🎂 <b>Іменини сьогодні святкують:</b>\n"
-            f"└ {names}\n"
-            f"<i>{random.choice(congrats)}</i>\n\n"
-            f"🎉 <b>Свята:</b> {holidays}\n"
-            f"📜 <b>Цей день в історії:</b> {history}\n"
-            f"{divider}\n"
-            f"{get_currency_logic()}\n"
-            f"🎄 До Нового Року: {ny_days} дн.\n"
-            f"{divider}\n"
-            f"{random.choice(intros)}\n"
-            f"└ {random_info}")
-            
-    return text
-
-if __name__ == "__main__":
-    content = make_post()
-    img_folder = "media/morning"
-    photo = None
-    if os.path.exists(img_folder):
-        files = [f for f in os.listdir(img_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        if files: photo = os.path.join(img_folder, random.choice(files))
-    
-    send_telegram(content, photo)
+    # 30 заготовок для ПОРАД (advices)
+    advices_intros = [
+        "💡 <b>Тобі це допоможе:</b>", "🛠 <b>Спробуй цей лайфхак:</b>", "📝 <b>Варто занотувати:</b>", "🎯 <b>Це спростить твоє життя:</b>",
+        "🧐 <b>Лови круту ідею:</b>", "📎 <b>На замітку:</b>", "🛡 <b>Корисна порада:</b>", "🔋 <b>Для твоєї продуктивності:</b>",
+        "🔑 <b>Секрет успіху:</b>", "🧪 <b>Перевірений метод:</b>", "🧩 <b>Маленька хитрість:</b>", "🚀 <b>Для твого розвитку:</b>",
+        "⚡️ <b>Швидка допомога:</b>", "🧘 <b>Для твого комфорту:</b>", "🧭 <b>Твій орієнтир:</b>", "🦾 <b>Зроби своє життя легшим:</b>",
+        "✅
