@@ -365,7 +365,7 @@ def make_post():
         return text, img
 
     else:
-        img = get_random_image("media/day")
+        img = get_random_image("media/infographics")
         text = (f"{random.choice(intros_advices)}\n└ {get_random_lines('advices')}")
         return text, img
 
