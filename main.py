@@ -22,30 +22,21 @@ def send_telegram(text, photo_path=None):
             return requests.post(url, data=payload, files={"photo": photo}).json()
     return requests.post(url, json=payload).json()
 
-# --- НОВА ФУНКЦІЯ: Відправка у Viber ---
+# --- НОВА ФУНКЦІЯ: Відправка у Viber (ОБХІД БЛОКУВАННЯ КАРТИНОК) ---
 def send_viber(text, photo_path=None):
     if not VIBER_TOKEN:
         return {"error": "Немає токена"}
     
     headers = {"X-Viber-Auth-Token": VIBER_TOKEN}
     
-    # 1. Отримуємо інфо та ПЕРЕВІРЯЄМО WEBHOOK (Пастка Вайбера)
-    info_url = "https://chatapi.viber.com/pa/get_account_info"
+    # 1. Отримуємо інфо та перевіряємо Webhook
     try:
-        info_res = requests.post(info_url, json={}, headers=headers).json()
-        
-        # Якщо вебхук порожній - ставимо обов'язкову заглушку
+        info_res = requests.post("https://chatapi.viber.com/pa/get_account_info", json={}, headers=headers).json()
         if not info_res.get("webhook"):
-            print("--- Встановлення обов'язкового Webhook-заглушки ---")
-            wh_payload = {
-                "url": "https://postman-echo.com/post",
-                "event_types": []
-            }
-            wh_res = requests.post("https://chatapi.viber.com/pa/set_webhook", json=wh_payload, headers=headers).json()
-            print("Webhook status:", wh_res)
-            
+            wh_payload = {"url": "https://postman-echo.com/post", "event_types": []}
+            requests.post("https://chatapi.viber.com/pa/set_webhook", json=wh_payload, headers=headers)
     except Exception as e:
-        return {"error": f"Помилка інфо/вебхука: {e}"}
+        return {"error": f"Помилка інфо: {e}"}
 
     # 2. Шукаємо ID адміністратора
     admin_id = None
@@ -60,30 +51,25 @@ def send_viber(text, photo_path=None):
     if not admin_id:
         return {"error": "Не знайдено ID адміністратора"}
         
-    # 3. Відправляємо повноцінний пост
+    # 3. Очищаємо текст від HTML
     clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
-    url = "https://chatapi.viber.com/pa/post"
     
+    # 4. ОБХІД БЛОКУВАННЯ ФОТО: Додаємо URL як текст
     if photo_path and os.path.exists(photo_path):
         repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
         photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
-        payload = {
-            "from": admin_id,
-            "sender": {"name": "Простір"},
-            "type": "picture",
-            "text": clean_text,
-            "media": photo_url
-        }
-    else:
-        payload = {
-            "from": admin_id,
-            "sender": {"name": "Простір"},
-            "type": "text",
-            "text": clean_text
-        }
+        clean_text += f"\n\n🖼 Картинка до посту: {photo_url}"
+        
+    payload = {
+        "from": admin_id,
+        "sender": {"name": "Простір"},
+        "type": "text",
+        "text": clean_text,
+        "min_api_version": 7
+    }
     
     try:
-        res = requests.post(url, json=payload, headers=headers).json()
+        res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers).json()
         return res
     except Exception as e:
         return {"error": str(e)}
@@ -381,11 +367,8 @@ def make_post():
 if __name__ == "__main__":
     content, photo = make_post()
     
-    # ТЕЛЕГРАМ ТИМЧАСОВО ВІДКЛЮЧЕНО
-    print("--- Телеграм відключено для тестів ---")
-    # send_telegram(content, photo)
+    print("--- Телеграм відключено ---")
     
-    # ВІДПРАВКА У ВАЙБЕР (Повноцінний пост з фото і текстом)
-    print("--- Відправка у Viber ---")
+    print("--- Відправка у Viber (Текстовий обхід) ---")
     res_vb = send_viber(content, photo)
     print(res_vb)
