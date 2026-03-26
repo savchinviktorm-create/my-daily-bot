@@ -22,7 +22,7 @@ def send_telegram(text, photo_path=None):
             return requests.post(url, data=payload, files={"photo": photo}).json()
     return requests.post(url, json=payload).json()
 
-# --- НОВА ФУНКЦІЯ: Відправка у Viber (ОБХІД БЛОКУВАННЯ КАРТИНОК) ---
+# --- ФУНКЦІЯ: Відправка у Viber (САМЕ КАРТИНКОЮ) ---
 def send_viber(text, photo_path=None):
     if not VIBER_TOKEN:
         return {"error": "Немає токена"}
@@ -38,7 +38,7 @@ def send_viber(text, photo_path=None):
     except Exception as e:
         return {"error": f"Помилка інфо: {e}"}
 
-    # 2. Шукаємо ID адміністратора
+    # 2. Шукаємо ID адміністратора (щоб Viber дозволив відправку)
     admin_id = None
     if info_res.get("status") == 0 and info_res.get("members"):
         for member in info_res["members"]:
@@ -54,19 +54,27 @@ def send_viber(text, photo_path=None):
     # 3. Очищаємо текст від HTML
     clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
     
-    # 4. ОБХІД БЛОКУВАННЯ ФОТО: Додаємо URL як текст
+    # 4. Відправка повідомлення (Картинка або Текст)
     if photo_path and os.path.exists(photo_path):
         repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
         photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
-        clean_text += f"\n\n🖼 Картинка до посту: {photo_url}"
         
-    payload = {
-        "from": admin_id,
-        "sender": {"name": "Простір"},
-        "type": "text",
-        "text": clean_text,
-        "min_api_version": 7
-    }
+        payload = {
+            "from": admin_id,
+            "sender": {"name": "Простір"},
+            "type": "picture",
+            "text": clean_text,
+            "media": photo_url,
+            "min_api_version": 7
+        }
+    else:
+        payload = {
+            "from": admin_id,
+            "sender": {"name": "Простір"},
+            "type": "text",
+            "text": clean_text,
+            "min_api_version": 7
+        }
     
     try:
         res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers).json()
@@ -77,7 +85,6 @@ def send_viber(text, photo_path=None):
 def get_currency_logic():
     res = "💰 <b>КУРС ВАЛЮТ</b>\n"
     
-    # 1. НБУ (Нацбанк)
     try:
         nbu = requests.get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json", timeout=5).json()
         usd_nbu = next(i for i in nbu if i['cc'] == 'USD')
@@ -85,7 +92,6 @@ def get_currency_logic():
         res += f"🇺🇦 <b>НБУ:</b>\n└ USD: {usd_nbu['rate']:.2f} | EUR: {eur_nbu['rate']:.2f}\n"
     except: pass
 
-    # 2. ПриватБанк та Монобанк
     try:
         p = requests.get("https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11", timeout=5).json()
         usd_p = next(i for i in p if i['ccy'] == 'USD')
@@ -98,7 +104,6 @@ def get_currency_logic():
     except: 
         res += "⚠️ Курс банків тимчасово недоступний\n"
 
-    # 3. Bitcoin
     try:
         btc = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
         btc_price = float(btc['price'])
@@ -360,15 +365,17 @@ def make_post():
         return text, img
 
     else:
-        img = get_random_image("media/day")
+        img = get_random_image("media/infographics")
         text = (f"{random.choice(intros_advices)}\n└ {get_random_lines('advices')}")
         return text, img
 
 if __name__ == "__main__":
     content, photo = make_post()
     
-    print("--- Телеграм відключено ---")
+    print("--- Відправка в Telegram ---")
+    res_tg = send_telegram(content, photo)
+    print("Результат Telegram:", res_tg)
     
-    print("--- Відправка у Viber (Текстовий обхід) ---")
+    print("\n--- Відправка у Viber ---")
     res_vb = send_viber(content, photo)
-    print(res_vb)
+    print("Результат Viber:", res_vb)
