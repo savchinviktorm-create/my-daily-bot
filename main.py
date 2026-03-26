@@ -22,57 +22,55 @@ def send_telegram(text, photo_path=None):
             return requests.post(url, data=payload, files={"photo": photo}).json()
     return requests.post(url, json=payload).json()
 
-# --- НОВА ФУНКЦІЯ: Відправка у Viber ---
+# --- НОВА ФУНКЦІЯ: Відправка у Viber (З ГЛИБОКОЮ ДІАГНОСТИКОЮ) ---
 def send_viber(text, photo_path=None):
     if not VIBER_TOKEN:
         return {"error": "Немає токена"}
     
     headers = {"X-Viber-Auth-Token": VIBER_TOKEN}
     
-    # 1. Отримуємо секретний ID адміністратора (ТВІЙ ID)
-    admin_id = None
+    print("--- VIBER ACCOUNT INFO ---")
+    info_url = "https://chatapi.viber.com/pa/get_account_info"
     try:
-        info_url = "https://chatapi.viber.com/pa/get_account_info"
         info_res = requests.post(info_url, json={}, headers=headers).json()
-        if info_res.get("status") == 0 and info_res.get("members"):
-            # Шукаємо саме superadmin
-            for member in info_res["members"]:
-                if member.get("role") == "superadmin":
-                    admin_id = member.get("id")
-                    break
-            # Якщо не знайшли, беремо першого адміна у списку
-            if not admin_id:
-                admin_id = info_res["members"][0]["id"]
+        print(info_res)
     except Exception as e:
-        return {"error": f"Помилка отримання ID: {e}"}
+        print(f"Error getting info: {e}")
+        return {"error": "Failed to get account info"}
         
+    admin_id = None
+    if info_res.get("status") == 0 and info_res.get("members"):
+        for member in info_res["members"]:
+            if member.get("role") == "superadmin":
+                admin_id = member.get("id")
+                break
+        if not admin_id:
+            admin_id = info_res["members"][0]["id"]
+            
     if not admin_id:
         return {"error": "Не знайдено ID адміністратора"}
-    
-    # Очищаємо текст від HTML тегів, бо Viber їх не підтримує
+        
     clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
     url = "https://chatapi.viber.com/pa/post"
     
-    # 2. Формуємо правильний запит ВІД ІМЕНІ АДМІНА
-    if photo_path and os.path.exists(photo_path):
-        repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
-        photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
-        
-        payload = {
-            "from": admin_id,
-            "type": "picture",
-            "text": clean_text,
-            "media": photo_url
-        }
-    else:
-        payload = {
-            "from": admin_id,
-            "type": "text",
-            "text": clean_text
-        }
+    # Додаємо блок sender для перевірки
+    payload = {
+        "from": admin_id,
+        "sender": {
+            "name": "Простір"
+        },
+        "type": "text",
+        "text": clean_text
+    }
+    
+    print("--- PAYLOAD TO VIBER ---")
+    print(payload)
     
     try:
-        return requests.post(url, json=payload, headers=headers).json()
+        res = requests.post(url, json=payload, headers=headers).json()
+        print("--- VIBER RESPONSE ---")
+        print(res)
+        return res
     except Exception as e:
         return {"error": str(e)}
 
@@ -371,9 +369,9 @@ if __name__ == "__main__":
     
     # ТЕЛЕГРАМ ТИМЧАСОВО ВІДКЛЮЧЕНО
     print("--- Телеграм відключено для тестів ---")
+    # send_telegram(content, photo)
     
-    # ТЕСТ ВАЙБЕРА (Відправляємо чистий текст для перевірки з'єднання)
-    print("--- Відправка у Viber (тільки текст) ---")
-    test_text = "Тестове повідомлення. Якщо ви це бачите — зв'язок налаштовано ідеально!"
+    # ТЕСТ ВАЙБЕРА (Діагностика)
+    print("--- Відправка у Viber (діагностика) ---")
+    test_text = "Тестове повідомлення для діагностики."
     res_vb = send_viber(test_text, None)
-    print(res_vb)
