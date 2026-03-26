@@ -349,8 +349,11 @@ def make_post():
 if __name__ == "__main__":
     content, photo = make_post()
     
-    # Відправляємо в Telegram
-    send_telegram(content, photo)
+    # ТИМЧАСОВО ВІДКЛЮЧАЄМО ТЕЛЕГРАМ ДЛЯ ТЕСТІВ (щоб не спамити)
+    # send_telegram(content, photo)
+    print("--- Тест: Телеграм відключено ---")
     
-    # Відправляємо у Viber
-    send_viber(content, photo)
+    # Відправляємо у Viber та друкуємо результат
+    print("--- Відправка у Viber ---")
+    res_vb = send_viber(content, photo)
+    print(res_vb)
