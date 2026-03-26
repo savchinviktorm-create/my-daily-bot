@@ -8,6 +8,7 @@ import pytz
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "583e99233cb332aaf8ab0ded7a92dde7")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "653398188")
+VIBER_TOKEN = os.environ.get("VIBER_TOKEN", "564974a12af0ed30-dbbbbb3694b529d4-5a27e9e2272c8279") # Твій токен додано сюди
 KIEV_TZ = pytz.timezone('Europe/Kiev')
 
 def get_now():
@@ -21,8 +22,52 @@ def send_telegram(text, photo_path=None):
             return requests.post(url, data=payload, files={"photo": photo}).json()
     return requests.post(url, json=payload).json()
 
+# --- НОВА ФУНКЦІЯ: Відправка у Viber ---
+def send_viber(text, photo_path=None):
+    if not VIBER_TOKEN:
+        return
+    
+    # Очищаємо текст від HTML тегів, бо Viber їх не підтримує
+    clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
+    
+    url = "https://chatapi.viber.com/pa/post"
+    headers = {"X-Viber-Auth-Token": VIBER_TOKEN}
+    
+    if photo_path and os.path.exists(photo_path):
+        # Формуємо публічне посилання на картинку з твого GitHub
+        repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
+        photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
+        
+        payload = {
+            "from": {"name": "Простір"},
+            "type": "picture",
+            "text": clean_text,
+            "media": photo_url
+        }
+    else:
+        payload = {
+            "from": {"name": "Простір"},
+            "type": "text",
+            "text": clean_text
+        }
+    
+    try:
+        return requests.post(url, json=payload, headers=headers).json()
+    except Exception as e:
+        return {"error": str(e)}
+
 def get_currency_logic():
     res = "💰 <b>КУРС ВАЛЮТ</b>\n"
+    
+    # 1. НБУ (Нацбанк)
+    try:
+        nbu = requests.get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json", timeout=5).json()
+        usd_nbu = next(i for i in nbu if i['cc'] == 'USD')
+        eur_nbu = next(i for i in nbu if i['cc'] == 'EUR')
+        res += f"🇺🇦 <b>НБУ:</b>\n└ USD: {usd_nbu['rate']:.2f} | EUR: {eur_nbu['rate']:.2f}\n"
+    except: pass
+
+    # 2. ПриватБанк та Монобанк
     try:
         p = requests.get("https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11", timeout=5).json()
         usd_p = next(i for i in p if i['ccy'] == 'USD')
@@ -31,9 +76,18 @@ def get_currency_logic():
         usd_m = next(i for i in m if i['currencyCodeA'] == 840 and i['currencyCodeB'] == 980)
         eur_m = next(i for i in m if i['currencyCodeA'] == 978 and i['currencyCodeB'] == 980)
         res += f"🏦 <b>ПриватБанк:</b>\n└ USD: {usd_p['buy'][:5]} / {usd_p['sale'][:5]} | EUR: {eur_p['buy'][:5]} / {eur_p['sale'][:5]}\n"
-        res += f"🐾 <b>Монобанк:</b>\n└ USD: {usd_m['rateBuy']:.2f} / {usd_m['rateSell']:.2f} | EUR: {eur_m['rateBuy']:.2f} / {eur_m['rateSell']:.2f}"
-    except: res += "⚠️ Курс тимчасово недоступний"
-    return res
+        res += f"🐾 <b>Монобанк:</b>\n└ USD: {usd_m['rateBuy']:.2f} / {usd_m['rateSell']:.2f} | EUR: {eur_m['rateBuy']:.2f} / {eur_m['rateSell']:.2f}\n"
+    except: 
+        res += "⚠️ Курс банків тимчасово недоступний\n"
+
+    # 3. Bitcoin
+    try:
+        btc = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
+        btc_price = float(btc['price'])
+        res += f"₿ <b>Bitcoin (BTC):</b> {btc_price:,.0f} $\n".replace(',', ' ')
+    except: pass
+
+    return res.strip()
 
 def get_data_by_date(filename):
     path = filename if os.path.exists(filename) else f"{filename}.txt"
@@ -57,7 +111,6 @@ def get_random_lines(filename):
         return random.choice(lines) if lines else "Дані оновлюються"
     except: return "Помилка файлу"
 
-# --- НОВА ФУНКЦІЯ: Отримує кілька рандомних рядків (для лайфхаків о 13:00) ---
 def get_multiple_random_lines(filename, count=3):
     path = filename if os.path.exists(filename) else f"{filename}.txt"
     if not os.path.exists(path): return ["Дані оновлюються"]
@@ -116,7 +169,6 @@ def make_post():
     weekday = now.weekday()
     divider = "✨ ✨ ✨ ✨ ✨"
 
-    # --- ТВОЇ ОРИГІНАЛЬНІ ЗАГОТОВКИ ТЕКСТІВ ---
     congrats = [
         "Не забудьте привітати знайомих! 🥂", "Чудова нагода зателефонувати друзям! 🎈", "Надішліть їм тепле вітання! 🎁",
         "Маленьке SMS зробить їхній день кращим! 💌", "Поділіться радістю з іменинниками! ✨", "Привітання зігріває серце. Напишіть їм! 😊",
@@ -154,7 +206,6 @@ def make_post():
         "💡 <b>Захоплюючий факт:</b>", "🔬 <b>Трохи науки:</b>", "🧠 <b>Тренуй мозок:</b>", "💡 <b>Для роздумів:</b>", "🌍 <b>Світ навколо нас:</b>"
     ]
 
-    # --- НОВІ ЗАГОТОВКИ ТЕКСТІВ ---
     book_captions = [
         "📖 Книги, які змусять вас забути про час. Зберігайте добірку!", "📚 Що почитати цього тижня? Тримайте кілька чудових ідей!",
         "🔖 Збережіть цей пост, щоб наступного разу не шукати, що почитати.", "☕️ Ідеальне чтиво для затишних вечорів з чашкою чаю.",
@@ -216,19 +267,16 @@ def make_post():
 
     # --- ЛОГІКА ПУБЛІКАЦІЙ (РОЗКЛАД) ---
 
-    # 📚 СЕРЕДА 16:00 - КНИЖКОВІ ДОБІРКИ
     if weekday == 2 and hour == 16:
         img = get_random_image("media/books")
         text = f"📚 <b>КНИЖКОВА ПОЛИЦЯ</b>\n\n{random.choice(book_captions)}"
         return text, img
 
-    # 🍿 ЧЕТВЕР 16:00 - КІНОПРЕМ'ЄРИ
     elif weekday == 3 and hour == 16:
-        img = get_random_image("media/cinema") # Бере картинку з нової папки
+        img = get_random_image("media/cinema")
         text = get_cinema_premieres()
         return text, img
 
-    # 🌅 РАНОК (5:00 - 10:59) - Основний блок
     elif 5 <= hour < 11:
         img = get_random_image("media/morning")
         names = get_data_by_date('history')
@@ -236,7 +284,6 @@ def make_post():
         history = get_data_by_date('Wiking')
         ny_days = (datetime.date(now.year + 1, 1, 1) - now.date()).days
         
-        # Вибираємо випадкову цікавинку (Твій оригінальний код)
         chosen_file = random.choice(['advices', 'facts', 'jokes'])
         random_info = get_random_lines(chosen_file)
 
@@ -263,13 +310,11 @@ def make_post():
                 f"└ {random_info}")
         return text, img
 
-    # 🗂 11:00 - ІНФОГРАФІКА
     elif hour == 11:
         img = get_random_image("media/infographics")
         text = f"🗂 <b>КОРИСНА ПАМ'ЯТКА</b>\n\n{random.choice(info_captions)}"
         return text, img
 
-    # 💡 13:00 - 3-5 ЛАЙФХАКІВ + КАРТИНКА (Якщо папка порожня - тільки текст)
     elif hour == 13:
         img = get_random_image("media/lifehacks")
         count = random.randint(3, 5)
@@ -282,14 +327,12 @@ def make_post():
         text += "<i>📌 Зберігайте, щоб спростити собі життя!</i>"
         return text, img
 
-    # 📖 17:00 - ВЕЧІРНЯ ПРИТЧА (Якщо папка порожня - тільки текст)
     elif hour == 17:
         img = get_random_image("media/parables")
         parable = get_random_lines('parables')
         text = f"📖 <b>ВЕЧІРНЯ ПРИТЧА</b>\n\n{parable}\n\n<i>✨ Задумайтесь про це по дорозі додому...</i>"
         return text, img
 
-    # 🌙 ВЕЧІР (Після 20:00) - Анекдот + Фільм + Побажання (Жодних фактів!)
     elif hour >= 20 or hour < 5:
         img = get_random_image("media/evening")
         j = get_random_lines('jokes')
@@ -298,7 +341,6 @@ def make_post():
                 f"✨ <i>{random.choice(night_wishes)}</i>")
         return text, img
 
-    # 🔄 ЗАПАСНИЙ ВАРІАНТ (Якщо крон спрацює в інший час)
     else:
         img = get_random_image("media/day")
         text = (f"{random.choice(intros_advices)}\n└ {get_random_lines('advices')}")
@@ -306,4 +348,9 @@ def make_post():
 
 if __name__ == "__main__":
     content, photo = make_post()
+    
+    # Відправляємо в Telegram
     send_telegram(content, photo)
+    
+    # Відправляємо у Viber
+    send_viber(content, photo)
