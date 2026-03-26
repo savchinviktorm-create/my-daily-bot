@@ -22,7 +22,7 @@ def send_telegram(text, photo_path=None):
             return requests.post(url, data=payload, files={"photo": photo}).json()
     return requests.post(url, json=payload).json()
 
-# --- НОВА ФУНКЦІЯ: Відправка у Viber (ОБХІД БЛОКУВАННЯ КАРТИНОК) ---
+# --- ФУНКЦІЯ: Відправка у Viber (Картинкою) ---
 def send_viber(text, photo_path=None):
     if not VIBER_TOKEN:
         return {"error": "Немає токена"}
@@ -54,19 +54,27 @@ def send_viber(text, photo_path=None):
     # 3. Очищаємо текст від HTML
     clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
     
-    # 4. ОБХІД БЛОКУВАННЯ ФОТО: Додаємо URL як текст
+    # 4. Відправка повідомлення (Картинка або Текст)
     if photo_path and os.path.exists(photo_path):
         repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
         photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
-        clean_text += f"\n\n🖼 Картинка до посту: {photo_url}"
         
-    payload = {
-        "from": admin_id,
-        "sender": {"name": "Простір"},
-        "type": "text",
-        "text": clean_text,
-        "min_api_version": 7
-    }
+        payload = {
+            "from": admin_id,
+            "sender": {"name": "Простір"},
+            "type": "picture",
+            "text": clean_text,
+            "media": photo_url,
+            "min_api_version": 7
+        }
+    else:
+        payload = {
+            "from": admin_id,
+            "sender": {"name": "Простір"},
+            "type": "text",
+            "text": clean_text,
+            "min_api_version": 7
+        }
     
     try:
         res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers).json()
@@ -367,8 +375,10 @@ def make_post():
 if __name__ == "__main__":
     content, photo = make_post()
     
-    print("--- Телеграм відключено ---")
+    print("--- Відправка в Telegram ---")
+    res_tg = send_telegram(content, photo)
+    print(res_tg)
     
-    print("--- Відправка у Viber (Текстовий обхід) ---")
+    print("--- Відправка у Viber ---")
     res_vb = send_viber(content, photo)
     print(res_vb)
