@@ -25,28 +25,48 @@ def send_telegram(text, photo_path=None):
 # --- НОВА ФУНКЦІЯ: Відправка у Viber ---
 def send_viber(text, photo_path=None):
     if not VIBER_TOKEN:
-        return
+        return {"error": "Немає токена"}
+    
+    headers = {"X-Viber-Auth-Token": VIBER_TOKEN}
+    
+    # 1. Отримуємо секретний ID адміністратора (ТВІЙ ID)
+    admin_id = None
+    try:
+        info_url = "https://chatapi.viber.com/pa/get_account_info"
+        info_res = requests.post(info_url, json={}, headers=headers).json()
+        if info_res.get("status") == 0 and info_res.get("members"):
+            # Шукаємо саме superadmin
+            for member in info_res["members"]:
+                if member.get("role") == "superadmin":
+                    admin_id = member.get("id")
+                    break
+            # Якщо не знайшли, беремо першого адміна у списку
+            if not admin_id:
+                admin_id = info_res["members"][0]["id"]
+    except Exception as e:
+        return {"error": f"Помилка отримання ID: {e}"}
+        
+    if not admin_id:
+        return {"error": "Не знайдено ID адміністратора"}
     
     # Очищаємо текст від HTML тегів, бо Viber їх не підтримує
     clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
-    
     url = "https://chatapi.viber.com/pa/post"
-    headers = {"X-Viber-Auth-Token": VIBER_TOKEN}
     
+    # 2. Формуємо правильний запит ВІД ІМЕНІ АДМІНА
     if photo_path and os.path.exists(photo_path):
-        # Формуємо публічне посилання на картинку з твого GitHub
         repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
         photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
         
         payload = {
-            "from": {"name": "Простір"},
+            "from": admin_id,
             "type": "picture",
             "text": clean_text,
             "media": photo_url
         }
     else:
         payload = {
-            "from": {"name": "Простір"},
+            "from": admin_id,
             "type": "text",
             "text": clean_text
         }
@@ -349,11 +369,11 @@ def make_post():
 if __name__ == "__main__":
     content, photo = make_post()
     
-    # ТЕЛЕГРАМ ТИМЧАСОВО ВІДКЛЮЧЕНО (ЩОБ НЕ СПАМИТИ ПІДПИСНИКІВ)
+    # ТЕЛЕГРАМ ТИМЧАСОВО ВІДКЛЮЧЕНО
     print("--- Телеграм відключено для тестів ---")
-    # send_telegram(content, photo)
     
-    # ВІДПРАВЛЯЄМО ТІЛЬКИ ТЕКСТ У ВАЙБЕР (БЕЗ ФОТО), ЩОБ ПЕРЕВІРИТИ БЛОКУВАННЯ КАРТИНОК
+    # ТЕСТ ВАЙБЕРА (Відправляємо чистий текст для перевірки з'єднання)
     print("--- Відправка у Viber (тільки текст) ---")
-    res_vb = send_viber(content, None) # Передаємо None замість photo, щоб відправити чисто текст
+    test_text = "Тестове повідомлення. Якщо ви це бачите — зв'язок налаштовано ідеально!"
+    res_vb = send_viber(test_text, None)
     print(res_vb)
