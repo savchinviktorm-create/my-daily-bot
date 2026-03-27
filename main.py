@@ -3,12 +3,13 @@ import random
 import datetime
 import os
 import pytz
+import time
 
 # --- НАЛАШТУВАННЯ ---
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "583e99233cb332aaf8ab0ded7a92dde7")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "653398188")
-VIBER_TOKEN = os.environ.get("VIBER_TOKEN", "564974a12af0ed30-dbbbbb3694b529d4-5a27e9e2272c8279")
+VIBER_TOKEN = os.environ.get("VIBER_TOKEN", "564974a12af0ed30-dbbbbb3694b529d4-5a27e9e2272c8279") # Твій токен додано сюди
 KIEV_TZ = pytz.timezone('Europe/Kiev')
 
 def get_now():
@@ -22,14 +23,14 @@ def send_telegram(text, photo_path=None):
             return requests.post(url, data=payload, files={"photo": photo}).json()
     return requests.post(url, json=payload).json()
 
-# --- ФУНКЦІЯ: Відправка у Viber (САМЕ КАРТИНКОЮ) ---
+# --- ФУНКЦІЯ: Відправка у Viber (ВАРІАНТ 1 + 4: SILENT & SPLIT) ---
 def send_viber(text, photo_path=None):
     if not VIBER_TOKEN:
         return {"error": "Немає токена"}
     
     headers = {"X-Viber-Auth-Token": VIBER_TOKEN}
     
-    # 1. Отримуємо інфо та перевіряємо Webhook
+    # 1. Отримуємо інфо
     try:
         info_res = requests.post("https://chatapi.viber.com/pa/get_account_info", json={}, headers=headers).json()
         if not info_res.get("webhook"):
@@ -38,7 +39,7 @@ def send_viber(text, photo_path=None):
     except Exception as e:
         return {"error": f"Помилка інфо: {e}"}
 
-    # 2. Шукаємо ID адміністратора (щоб Viber дозволив відправку)
+    # 2. Шукаємо ID адміністратора
     admin_id = None
     if info_res.get("status") == 0 and info_res.get("members"):
         for member in info_res["members"]:
@@ -54,37 +55,69 @@ def send_viber(text, photo_path=None):
     # 3. Очищаємо текст від HTML
     clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
     
-    # 4. Відправка повідомлення (Картинка або Текст)
+    # --- ЛОГІКА РОЗПОДІЛУ ТЕКСТУ (ВАРІАНТ 4) ---
+    VIBER_CAPTION_LIMIT = 1000 # Залишаємо запас від 1024
+    part1 = clean_text
+    part2 = None
+
+    if len(clean_text) > VIBER_CAPTION_LIMIT:
+        part1 = clean_text[:VIBER_CAPTION_LIMIT] + "..."
+        part2 = " (продовження...)\n\n" + clean_text[VIBER_CAPTION_LIMIT:]
+
+    # 4. Перевірка картинки
+    photo_ready = False
+    photo_url = ""
     if photo_path and os.path.exists(photo_path):
         repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
         photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
         
+        for attempt in range(3):
+            try:
+                check = requests.head(photo_url, timeout=10)
+                if check.status_code == 200:
+                    photo_ready = True
+                    break
+            except:
+                pass
+            time.sleep(5)
+
+    # 5. ВІДПРАВКА ПЕРШОЇ ЧАСТИНИ (Картинка + текст)
+    if photo_ready:
         payload = {
             "from": admin_id,
-            "sender": {"name": "Простір"},
             "type": "picture",
-            "text": clean_text,
+            "text": part1,
             "media": photo_url,
             "min_api_version": 7
         }
     else:
         payload = {
             "from": admin_id,
-            "sender": {"name": "Простір"},
             "type": "text",
-            "text": clean_text,
+            "text": part1,
             "min_api_version": 7
         }
     
-    try:
-        res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers).json()
-        return res
-    except Exception as e:
-        return {"error": str(e)}
+    main_res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers).json()
+
+    # 6. ВІДПРАВКА ДРУГОЇ ЧАСТИНИ (БЕЗ ЗВУКУ - ВАРІАНТ 1)
+    if part2:
+        time.sleep(1) # Невелика пауза, щоб повідомлення прийшли по порядку
+        silent_payload = {
+            "from": admin_id,
+            "type": "text",
+            "text": part2,
+            "silent": True, # ТУТ МАГІЯ: БЕЗ ЗВУКУ
+            "min_api_version": 7
+        }
+        requests.post("https://chatapi.viber.com/pa/post", json=silent_payload, headers=headers)
+
+    return main_res
 
 def get_currency_logic():
     res = "💰 <b>КУРС ВАЛЮТ</b>\n"
     
+    # 1. НБУ (Нацбанк)
     try:
         nbu = requests.get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json", timeout=5).json()
         usd_nbu = next(i for i in nbu if i['cc'] == 'USD')
@@ -92,6 +125,7 @@ def get_currency_logic():
         res += f"🇺🇦 <b>НБУ:</b>\n└ USD: {usd_nbu['rate']:.2f} | EUR: {eur_nbu['rate']:.2f}\n"
     except: pass
 
+    # 2. ПриватБанк та Монобанк
     try:
         p = requests.get("https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11", timeout=5).json()
         usd_p = next(i for i in p if i['ccy'] == 'USD')
@@ -104,6 +138,7 @@ def get_currency_logic():
     except: 
         res += "⚠️ Курс банків тимчасово недоступний\n"
 
+    # 3. Bitcoin
     try:
         btc = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
         btc_price = float(btc['price'])
@@ -365,17 +400,15 @@ def make_post():
         return text, img
 
     else:
-        img = get_random_image("media/infographics")
+        img = get_random_image("media/day")
         text = (f"{random.choice(intros_advices)}\n└ {get_random_lines('advices')}")
         return text, img
 
 if __name__ == "__main__":
     content, photo = make_post()
     
-    print("--- Відправка в Telegram ---")
-    res_tg = send_telegram(content, photo)
-    print("Результат Telegram:", res_tg)
+    # Відправляємо в Telegram
+    send_telegram(content, photo)
     
-    print("\n--- Відправка у Viber ---")
-    res_vb = send_viber(content, photo)
-    print("Результат Viber:", res_vb)
+    # Відправляємо у Viber
+    send_viber(content, photo)
