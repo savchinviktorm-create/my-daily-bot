@@ -374,9 +374,9 @@ def make_post():
         return text, img
 
     elif hour == 13:
-        img = get_random_image("media/lifehacks")
+        img = None
         count = random.randint(3, 5)
-        advices = get_multiple_random_lines('advices', count)
+        advices = get_multiple_random_lines('lifehacks', count)
         
         text = f"💡 <b>ТОП-{count} ЛАЙФХАКІВ НА СЬОГОДНІ:</b>\n\n"
         for i, advice in enumerate(advices, 1):
@@ -388,7 +388,7 @@ def make_post():
     elif hour == 17:
         img = get_random_image("media/parables")
         parable = get_random_lines('parables')
-        text = f"📖 <b>ВЕЧІРНЯ ПРИТЧА</b>\n\n{parable}\n\n<i>✨ Задумайтесь про це по дорозі додому...</i>"
+        text = f"📖 <b>ВЕЧІРНІ РОЗДУМИ</b>\n\n{parable}\n\n<i>✨ Задумайтесь про це по дорозі додому...</i>"
         return text, img
 
     elif hour >= 20 or hour < 5:
