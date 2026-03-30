@@ -4,16 +4,87 @@ import datetime
 import os
 import pytz
 import time
+import re
+from urllib.parse import quote
 
 # --- НАЛАШТУВАННЯ ---
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "583e99233cb332aaf8ab0ded7a92dde7")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "653398188")
 VIBER_TOKEN = os.environ.get("VIBER_TOKEN", "564974a12af0ed30-dbbbbb3694b529d4-5a27e9e2272c8279") # Твій токен додано сюди
-KIEV_TZ = pytz.timezone('Europe/Kiev')
+try:
+    KIEV_TZ = pytz.timezone('Europe/Kyiv')
+except Exception:
+    KIEV_TZ = pytz.timezone('Europe/Kiev')
 
 def get_now():
     return datetime.datetime.now(KIEV_TZ)
+
+def strip_html_for_viber(text):
+    clean_text = re.sub(r'<[^>]+>', '', text)
+    clean_text = clean_text.replace('&nbsp;', ' ').replace('&amp;', '&')
+    return clean_text
+
+def split_text_for_viber(text, max_len):
+    if len(text) <= max_len:
+        return [text]
+
+    parts = []
+    remaining = text
+
+    while len(remaining) > max_len:
+        split_at = remaining.rfind('\n', 0, max_len)
+        if split_at == -1 or split_at < int(max_len * 0.6):
+            split_at = remaining.rfind(' ', 0, max_len)
+        if split_at == -1 or split_at < int(max_len * 0.6):
+            split_at = max_len
+
+        part = remaining[:split_at].rstrip()
+        if not part:
+            part = remaining[:max_len].rstrip()
+            split_at = len(part)
+
+        parts.append(part)
+        remaining = remaining[split_at:].lstrip()
+
+    if remaining:
+        parts.append(remaining)
+
+    return parts
+
+def build_viber_media_url(photo_path):
+    if not photo_path or not os.path.exists(photo_path):
+        return ""
+
+    repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
+    normalized_path = photo_path.replace('\\', '/').replace(os.sep, '/')
+    encoded_path = quote(normalized_path, safe="/._-")
+    return f"https://raw.githubusercontent.com/{repo}/main/{encoded_path}"
+
+def check_viber_media(photo_url):
+    if not photo_url:
+        return False
+
+    for attempt in range(3):
+        try:
+            check = requests.head(photo_url, timeout=10, allow_redirects=True)
+            if check.status_code == 200:
+                return True
+        except Exception:
+            pass
+
+        try:
+            check = requests.get(photo_url, timeout=15, stream=True)
+            status_ok = check.status_code == 200
+            check.close()
+            if status_ok:
+                return True
+        except Exception:
+            pass
+
+        time.sleep(5)
+
+    return False
 
 def send_telegram(text, photo_path=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/send{'Photo' if photo_path else 'Message'}"
@@ -23,19 +94,19 @@ def send_telegram(text, photo_path=None):
             return requests.post(url, data=payload, files={"photo": photo}).json()
     return requests.post(url, json=payload).json()
 
-# --- ФУНКЦІЯ: Відправка у Viber (ВАРІАНТ 1 + 4: SILENT & SPLIT) ---
+# --- ФУНКЦІЯ: Відправка у Viber (ВАРІАНТ 1 + 4: SILENT & SPLIT + FALLBACK) ---
 def send_viber(text, photo_path=None):
     if not VIBER_TOKEN:
         return {"error": "Немає токена"}
-    
+
     headers = {"X-Viber-Auth-Token": VIBER_TOKEN}
-    
+
     # 1. Отримуємо інфо
     try:
-        info_res = requests.post("https://chatapi.viber.com/pa/get_account_info", json={}, headers=headers).json()
+        info_res = requests.post("https://chatapi.viber.com/pa/get_account_info", json={}, headers=headers, timeout=20).json()
         if not info_res.get("webhook"):
             wh_payload = {"url": "https://postman-echo.com/post", "event_types": []}
-            requests.post("https://chatapi.viber.com/pa/set_webhook", json=wh_payload, headers=headers)
+            requests.post("https://chatapi.viber.com/pa/set_webhook", json=wh_payload, headers=headers, timeout=20)
     except Exception as e:
         return {"error": f"Помилка інфо: {e}"}
 
@@ -48,71 +119,129 @@ def send_viber(text, photo_path=None):
                 break
         if not admin_id:
             admin_id = info_res["members"][0]["id"]
-            
+
     if not admin_id:
         return {"error": "Не знайдено ID адміністратора"}
-        
+
     # 3. Очищаємо текст від HTML
-    clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
-    
-    # --- ЛОГІКА РОЗПОДІЛУ ТЕКСТУ (ВАРІАНТ 4) ---
-    VIBER_CAPTION_LIMIT = 1000 # Залишаємо запас від 1024
-    part1 = clean_text
-    part2 = None
+    clean_text = strip_html_for_viber(text)
 
-    if len(clean_text) > VIBER_CAPTION_LIMIT:
-        part1 = clean_text[:VIBER_CAPTION_LIMIT] + "..."
-        part2 = " (продовження...)\n\n" + clean_text[VIBER_CAPTION_LIMIT:]
+    # 4. Ліміти для Viber
+    VIBER_TEXT_LIMIT = 7000
+    VIBER_PICTURE_CAPTION_LIMIT = 768
 
-    # 4. Перевірка картинки
+    # 5. Перевірка картинки
     photo_ready = False
     photo_url = ""
     if photo_path and os.path.exists(photo_path):
-        repo = os.environ.get("GITHUB_REPOSITORY", "savchinviktorm-create/my-daily-bot")
-        photo_url = f"https://raw.githubusercontent.com/{repo}/main/{photo_path.replace(os.sep, '/')}"
-        
-        for attempt in range(3):
-            try:
-                check = requests.head(photo_url, timeout=10)
-                if check.status_code == 200:
-                    photo_ready = True
-                    break
-            except:
-                pass
-            time.sleep(5)
+        photo_url = build_viber_media_url(photo_path)
+        photo_ready = check_viber_media(photo_url)
 
-    # 5. ВІДПРАВКА ПЕРШОЇ ЧАСТИНИ (Картинка + текст)
+    # 6. Готуємо частини тексту
+    if photo_ready:
+        text_parts = split_text_for_viber(clean_text, VIBER_PICTURE_CAPTION_LIMIT)
+    else:
+        text_parts = split_text_for_viber(clean_text, VIBER_TEXT_LIMIT)
+
+    main_res = None
+    fallback_responses = []
+    additional_parts_responses = []
+
+    # 7. ВІДПРАВКА ПЕРШОЇ ЧАСТИНИ
     if photo_ready:
         payload = {
             "from": admin_id,
             "type": "picture",
-            "text": part1,
+            "text": text_parts[0],
             "media": photo_url,
             "min_api_version": 7
         }
+        main_res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers, timeout=30).json()
+
+        # Якщо Viber відхилив фото (наприклад, через розмір картинки, формат або проблемний URL),
+        # не втрачаємо ранковий пост: повторно відправляємо все текстом.
+        if main_res.get("status") != 0:
+            text_only_parts = split_text_for_viber(clean_text, VIBER_TEXT_LIMIT)
+            for idx, part in enumerate(text_only_parts):
+                fallback_payload = {
+                    "from": admin_id,
+                    "type": "text",
+                    "text": part,
+                    "min_api_version": 7
+                }
+                if idx > 0:
+                    fallback_payload["silent"] = True
+
+                fallback_res = requests.post(
+                    "https://chatapi.viber.com/pa/post",
+                    json=fallback_payload,
+                    headers=headers,
+                    timeout=30
+                ).json()
+                fallback_responses.append(fallback_res)
+
+                time.sleep(1)
+
+            return {
+                "main_response": main_res,
+                "fallback_text_responses": fallback_responses
+            }
+
+        # Якщо перша частина з картинкою пройшла — надсилаємо решту тексту тихо
+        if len(text_parts) > 1:
+            for part in text_parts[1:]:
+                time.sleep(1)
+                silent_payload = {
+                    "from": admin_id,
+                    "type": "text",
+                    "text": part,
+                    "silent": True,
+                    "min_api_version": 7
+                }
+                silent_res = requests.post(
+                    "https://chatapi.viber.com/pa/post",
+                    json=silent_payload,
+                    headers=headers,
+                    timeout=30
+                ).json()
+                additional_parts_responses.append(silent_res)
+
+        return {
+            "main_response": main_res,
+            "additional_parts_responses": additional_parts_responses
+        }
+
     else:
-        payload = {
-            "from": admin_id,
-            "type": "text",
-            "text": part1,
-            "min_api_version": 7
-        }
-    
-    main_res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers).json()
+        # Якщо картинки немає або Viber не зміг її підтягнути — надсилаємо весь пост текстом
+        for idx, part in enumerate(text_parts):
+            payload = {
+                "from": admin_id,
+                "type": "text",
+                "text": part,
+                "min_api_version": 7
+            }
+            if idx > 0:
+                payload["silent"] = True
 
-    # 6. ВІДПРАВКА ДРУГОЇ ЧАСТИНИ (БЕЗ ЗВУКУ - ВАРІАНТ 1)
-    if part2:
-        time.sleep(1) # Невелика пауза, щоб повідомлення прийшли по порядку
-        silent_payload = {
-            "from": admin_id,
-            "type": "text",
-            "text": part2,
-            "silent": True, # ТУТ МАГІЯ: БЕЗ ЗВУКУ
-            "min_api_version": 7
-        }
-        requests.post("https://chatapi.viber.com/pa/post", json=silent_payload, headers=headers)
+            res = requests.post(
+                "https://chatapi.viber.com/pa/post",
+                json=payload,
+                headers=headers,
+                timeout=30
+            ).json()
 
-    return main_res
+            if idx == 0:
+                main_res = res
+            else:
+                additional_parts_responses.append(res)
+
+            time.sleep(1)
+
+        return {
+            "main_response": main_res,
+            "additional_parts_responses": additional_parts_responses
+        }
+
 
 def get_currency_logic():
     res = "💰 <b>КУРС ВАЛЮТ</b>\n"
