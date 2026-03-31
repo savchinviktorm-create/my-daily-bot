@@ -11,7 +11,8 @@ from urllib.parse import quote
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "583e99233cb332aaf8ab0ded7a92dde7")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "653398188")
-VIBER_TOKEN = os.environ.get("VIBER_TOKEN", "564974a12af0ed30-dbbbbb3694b529d4-5a27e9e2272c8279") # Твій токен додано сюди
+VIBER_TOKEN = os.environ.get("VIBER_TOKEN", "564974a12af0ed30-dbbbbb3694b529d4-5a27e9e2272c8279")  # Твій токен додано сюди
+
 try:
     KIEV_TZ = pytz.timezone('Europe/Kyiv')
 except Exception:
@@ -88,10 +89,16 @@ def check_viber_media(photo_url):
 
 def send_telegram(text, photo_path=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/send{'Photo' if photo_path else 'Message'}"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "caption" if photo_path else "text": text, "parse_mode": "HTML"}
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "caption" if photo_path else "text": text,
+        "parse_mode": "HTML"
+    }
+
     if photo_path and os.path.exists(photo_path):
         with open(photo_path, 'rb') as photo:
             return requests.post(url, data=payload, files={"photo": photo}).json()
+
     return requests.post(url, json=payload).json()
 
 # --- ФУНКЦІЯ: Відправка у Viber (ВАРІАНТ 1 + 4: SILENT & SPLIT + FALLBACK) ---
@@ -103,10 +110,20 @@ def send_viber(text, photo_path=None):
 
     # 1. Отримуємо інфо
     try:
-        info_res = requests.post("https://chatapi.viber.com/pa/get_account_info", json={}, headers=headers, timeout=20).json()
+        info_res = requests.post(
+            "https://chatapi.viber.com/pa/get_account_info",
+            json={},
+            headers=headers,
+            timeout=20
+        ).json()
         if not info_res.get("webhook"):
             wh_payload = {"url": "https://postman-echo.com/post", "event_types": []}
-            requests.post("https://chatapi.viber.com/pa/set_webhook", json=wh_payload, headers=headers, timeout=20)
+            requests.post(
+                "https://chatapi.viber.com/pa/set_webhook",
+                json=wh_payload,
+                headers=headers,
+                timeout=20
+            )
     except Exception as e:
         return {"error": f"Помилка інфо: {e}"}
 
@@ -156,10 +173,14 @@ def send_viber(text, photo_path=None):
             "media": photo_url,
             "min_api_version": 7
         }
-        main_res = requests.post("https://chatapi.viber.com/pa/post", json=payload, headers=headers, timeout=30).json()
+        main_res = requests.post(
+            "https://chatapi.viber.com/pa/post",
+            json=payload,
+            headers=headers,
+            timeout=30
+        ).json()
 
-        # Якщо Viber відхилив фото (наприклад, через розмір картинки, формат або проблемний URL),
-        # не втрачаємо ранковий пост: повторно відправляємо все текстом.
+        # Якщо Viber відхилив фото — не втрачаємо пост, повторно відправляємо все текстом
         if main_res.get("status") != 0:
             text_only_parts = split_text_for_viber(clean_text, VIBER_TEXT_LIMIT)
             for idx, part in enumerate(text_only_parts):
@@ -179,7 +200,6 @@ def send_viber(text, photo_path=None):
                     timeout=30
                 ).json()
                 fallback_responses.append(fallback_res)
-
                 time.sleep(1)
 
             return {
@@ -242,6 +262,42 @@ def send_viber(text, photo_path=None):
             "additional_parts_responses": additional_parts_responses
         }
 
+def get_btc_price_text():
+    # 1. Основний Binance
+    try:
+        btc = requests.get(
+            "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",
+            timeout=5
+        ).json()
+        btc_price = float(btc["price"])
+        return f"₿ <b>Bitcoin (BTC):</b> {btc_price:,.0f} $\n".replace(',', ' ')
+    except:
+        pass
+
+    # 2. Binance market-data only
+    try:
+        btc = requests.get(
+            "https://data-api.binance.vision/api/v3/ticker/price?symbol=BTCUSDT",
+            timeout=5
+        ).json()
+        btc_price = float(btc["price"])
+        return f"₿ <b>Bitcoin (BTC):</b> {btc_price:,.0f} $\n".replace(',', ' ')
+    except:
+        pass
+
+    # 3. Запасний варіант — Bybit
+    try:
+        btc = requests.get(
+            "https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT",
+            timeout=5
+        ).json()
+        btc_price = float(btc["result"]["list"][0]["lastPrice"])
+        return f"₿ <b>Bitcoin (BTC):</b> {btc_price:,.0f} $\n".replace(',', ' ')
+    except:
+        pass
+
+    # Якщо ніде не вийшло — просто нічого не додаємо
+    return ""
 
 def get_currency_logic():
     res = "💰 <b>КУРС ВАЛЮТ</b>\n"
@@ -252,33 +308,35 @@ def get_currency_logic():
         usd_nbu = next(i for i in nbu if i['cc'] == 'USD')
         eur_nbu = next(i for i in nbu if i['cc'] == 'EUR')
         res += f"🇺🇦 <b>НБУ:</b>\n└ USD: {usd_nbu['rate']:.2f} | EUR: {eur_nbu['rate']:.2f}\n"
-    except: pass
+    except:
+        pass
 
     # 2. ПриватБанк та Монобанк
     try:
         p = requests.get("https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11", timeout=5).json()
         usd_p = next(i for i in p if i['ccy'] == 'USD')
         eur_p = next(i for i in p if i['ccy'] == 'EUR')
+
         m = requests.get("https://api.monobank.ua/bank/currency", timeout=5).json()
         usd_m = next(i for i in m if i['currencyCodeA'] == 840 and i['currencyCodeB'] == 980)
         eur_m = next(i for i in m if i['currencyCodeA'] == 978 and i['currencyCodeB'] == 980)
+
         res += f"🏦 <b>ПриватБанк:</b>\n└ USD: {usd_p['buy'][:5]} / {usd_p['sale'][:5]} | EUR: {eur_p['buy'][:5]} / {eur_p['sale'][:5]}\n"
         res += f"🐾 <b>Монобанк:</b>\n└ USD: {usd_m['rateBuy']:.2f} / {usd_m['rateSell']:.2f} | EUR: {eur_m['rateBuy']:.2f} / {eur_m['rateSell']:.2f}\n"
-    except: 
+    except:
         res += "⚠️ Курс банків тимчасово недоступний\n"
 
-    # 3. Bitcoin
-    try:
-        btc = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
-        btc_price = float(btc['price'])
-        res += f"₿ <b>Bitcoin (BTC):</b> {btc_price:,.0f} $\n".replace(',', ' ')
-    except: pass
+    # 3. Bitcoin — безпечне додавання
+    btc_line = get_btc_price_text()
+    if btc_line:
+        res += btc_line
 
     return res.strip()
 
 def get_data_by_date(filename):
     path = filename if os.path.exists(filename) else f"{filename}.txt"
-    if not os.path.exists(path): return "Файл не знайдено"
+    if not os.path.exists(path):
+        return "Файл не знайдено"
     try:
         today_str = get_now().strftime("%m-%d")
         with open(path, 'r', encoding='utf-8') as f:
@@ -287,29 +345,36 @@ def get_data_by_date(filename):
                     content = line.strip()[5:].lstrip(' —-–:.').strip()
                     return content
         return "Дані відсутні"
-    except: return "Помилка"
+    except:
+        return "Помилка"
 
 def get_random_lines(filename):
     path = filename if os.path.exists(filename) else f"{filename}.txt"
-    if not os.path.exists(path): return "Дані оновлюються"
+    if not os.path.exists(path):
+        return "Дані оновлюються"
     try:
         with open(path, 'r', encoding='utf-8') as f:
             lines = [l.strip() for l in f.readlines() if l.strip()]
         return random.choice(lines) if lines else "Дані оновлюються"
-    except: return "Помилка файлу"
+    except:
+        return "Помилка файлу"
 
 def get_multiple_random_lines(filename, count=3):
     path = filename if os.path.exists(filename) else f"{filename}.txt"
-    if not os.path.exists(path): return ["Дані оновлюються"]
+    if not os.path.exists(path):
+        return ["Дані оновлюються"]
     try:
         with open(path, 'r', encoding='utf-8') as f:
             lines = [l.strip() for l in f.readlines() if l.strip()]
-        if not lines: return ["Дані оновлюються"]
+        if not lines:
+            return ["Дані оновлюються"]
         return random.sample(lines, min(count, len(lines)))
-    except: return ["Помилка файлу"]
+    except:
+        return ["Помилка файлу"]
 
 def get_random_image(folder):
-    if not os.path.exists(folder): return None
+    if not os.path.exists(folder):
+        return None
     files = [f for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     return os.path.join(folder, random.choice(files)) if files else None
 
@@ -320,35 +385,39 @@ def get_movie():
         r = requests.get(url, timeout=10).json()
         m = random.choice(r['results'])
         return f"🎬 <b>ВЕЧІРНІЙ КІНОЗАЛ</b>\n🎥 <b>{m.get('title')}</b>\n⭐ Рейтинг: {m.get('vote_average')}\n🍿 {m.get('overview')[:200]}..."
-    except: return "🎬 Час для кіно!"
+    except:
+        return "🎬 Час для кіно!"
 
 def get_cinema_premieres():
     intros_cinema = [
-        "🎟 <b>Новинки тижня в кіно:</b>", "🎬 <b>Прем'єрний четвер:</b>", "🍿 <b>Вже в кінотеатрах України:</b>", 
-        "🎞 <b>Що подивитись на великому екрані:</b>", "🎬 <b>Свіжі прем'єри:</b>", "🎟 <b>Час у кіно:</b>", 
-        "🎬 <b>Афіша тижня:</b>", "🍿 <b>Кіноновинки в Україні:</b>", "🎟 <b>Заплануй похід у кіно:</b>", 
-        "🎬 <b>Гарячі прем'єри:</b>", "🎞 <b>Кіноафіша сьогодні:</b>", "🍿 <b>Прем'єри, які не можна пропустити:</b>", 
-        "🎟 <b>Кіно на вихідні:</b>", "🎬 <b>Що нового в прокаті:</b>", "🎞 <b>Твій гід по кінотеатрах:</b>", 
-        "🍿 <b>Український прокат сьогодні:</b>", "🎟 <b>Головні фільми тижня:</b>", "🎬 <b>Кінопрем'єри вже тут:</b>", 
-        "🎞 <b>Дивись у кінотеатрах:</b>", "🍿 <b>Афіша на четвер:</b>", "🎟 <b>Кіносеанси тижня:</b>", 
-        "🎬 <b>Новинки великого екрану:</b>", "🎞 <b>Сьогодні у прокаті:</b>", "🍿 <b>Попкорн та фільми:</b>", 
-        "🎟 <b>Що зараз іде в кіно:</b>", "🎬 <b>Найцікавіші прем'єри:</b>", "🎞 <b>Топ новинок прокату:</b>", 
+        "🎟 <b>Новинки тижня в кіно:</b>", "🎬 <b>Прем'єрний четвер:</b>", "🍿 <b>Вже в кінотеатрах України:</b>",
+        "🎞 <b>Що подивитись на великому екрані:</b>", "🎬 <b>Свіжі прем'єри:</b>", "🎟 <b>Час у кіно:</b>",
+        "🎬 <b>Афіша тижня:</b>", "🍿 <b>Кіноновинки в Україні:</b>", "🎟 <b>Заплануй похід у кіно:</b>",
+        "🎬 <b>Гарячі прем'єри:</b>", "🎞 <b>Кіноафіша сьогодні:</b>", "🍿 <b>Прем'єри, які не можна пропустити:</b>",
+        "🎟 <b>Кіно на вихідні:</b>", "🎬 <b>Що нового в прокаті:</b>", "🎞 <b>Твій гід по кінотеатрах:</b>",
+        "🍿 <b>Український прокат сьогодні:</b>", "🎟 <b>Головні фільми тижня:</b>", "🎬 <b>Кінопрем'єри вже тут:</b>",
+        "🎞 <b>Дивись у кінотеатрах:</b>", "🍿 <b>Афіша на четвер:</b>", "🎟 <b>Кіносеанси тижня:</b>",
+        "🎬 <b>Новинки великого екрану:</b>", "🎞 <b>Сьогодні у прокаті:</b>", "🍿 <b>Попкорн та фільми:</b>",
+        "🎟 <b>Що зараз іде в кіно:</b>", "🎬 <b>Найцікавіші прем'єри:</b>", "🎞 <b>Топ новинок прокату:</b>",
         "🍿 <b>День прем'єр в Україні:</b>", "🎟 <b>Твій квиток у кіносвіт:</b>", "🎬 <b>Старт прокату сьогодні:</b>"
     ]
     try:
         url = f"https://api.themoviedb.org/3/movie/now_playing?api_key={TMDB_API_KEY}&language=uk-UA&region=UA"
         r = requests.get(url, timeout=10).json()
         movies = r.get('results', [])[:5]
-        if not movies: return "🎬 Сьогодні без гучних прем'єр."
+        if not movies:
+            return "🎬 Сьогодні без гучних прем'єр."
         res = f"{random.choice(intros_cinema)}\n\n"
         for m in movies:
             title = m.get('title', 'Без назви')
             year = m.get('release_date', '----')[:4]
             desc = m.get('overview', 'Опис відсутній...')
-            if len(desc) > 150: desc = desc[:147] + "..."
+            if len(desc) > 150:
+                desc = desc[:147] + "..."
             res += f"🍿 <b>{title}</b> ({year})\n└ {desc}\n\n"
         return res
-    except: return "🎬 Новинки кіно вже чекають на тебе!"
+    except:
+        return "🎬 Новинки кіно вже чекають на тебе!"
 
 def make_post():
     now = get_now()
@@ -448,7 +517,7 @@ def make_post():
     ]
 
     night_wishes = [
-        "Тихого та затишного вечора! Час відпочити. 🌙", "Міцного сну та спокійної ночі! ✨", 
+        "Тихого та затишного вечора! Час відпочити. 🌙", "Міцного сну та спокійної ночі! ✨",
         "Нехай вечір принесе лише релакс. 🍷", "Час відкласти справи і просто відпочити. 🛋"
     ]
 
@@ -470,7 +539,7 @@ def make_post():
         holidays = get_data_by_date('Holiday')
         history = get_data_by_date('Wiking')
         ny_days = (datetime.date(now.year + 1, 1, 1) - now.date()).days
-        
+
         chosen_file = random.choice(['advices', 'facts', 'jokes'])
         random_info = get_random_lines(chosen_file)
 
@@ -481,40 +550,42 @@ def make_post():
         else:
             intro = random.choice(intros_quotes)
 
-        text = (f"🌅 <b>ДОБРОГО РАНКУ!</b>\n"
-                f"📅 Сьогодні: <b>{now.strftime('%d.%m.%Y')}</b>\n"
-                f"{divider}\n"
-                f"🎂 <b>Іменини сьогодні святкують:</b>\n"
-                f"└ {names}\n"
-                f"<i>{random.choice(congrats)}</i>\n\n"
-                f"🎉 <b>Свята:</b> {holidays}\n"
-                f"📜 <b>Цей день в історії:</b> {history}\n"
-                f"{divider}\n"
-                f"{get_currency_logic()}\n"
-                f"🎄 До Нового Року: {ny_days} дн.\n"
-                f"{divider}\n"
-                f"{intro}\n"
-                f"└ {random_info}")
+        text = (
+            f"🌅 <b>ДОБРОГО РАНКУ!</b>\n"
+            f"📅 Сьогодні: <b>{now.strftime('%d.%m.%Y')}</b>\n"
+            f"{divider}\n"
+            f"🎂 <b>Іменини сьогодні святкують:</b>\n"
+            f"└ {names}\n"
+            f"<i>{random.choice(congrats)}</i>\n\n"
+            f"🎉 <b>Свята:</b> {holidays}\n"
+            f"📜 <b>Цей день в історії:</b> {history}\n"
+            f"{divider}\n"
+            f"{get_currency_logic()}\n"
+            f"🎄 До Нового Року: {ny_days} дн.\n"
+            f"{divider}\n"
+            f"{intro}\n"
+            f"└ {random_info}"
+        )
         return text, img
 
-    elif hour == 11:
+    elif 11 <= hour < 13:
         img = get_random_image("media/infographics")
         text = f"🗂 <b>КОРИСНА ПАМ'ЯТКА</b>\n\n{random.choice(info_captions)}"
         return text, img
 
-    elif hour == 13:
+    elif 13 <= hour < 16:
         img = None
         count = random.randint(3, 5)
         advices = get_multiple_random_lines('lifehacks', count)
-        
+
         text = f"💡 <b>ТОП-{count} ЛАЙФХАКІВ НА СЬОГОДНІ:</b>\n\n"
         for i, advice in enumerate(advices, 1):
             text += f"<b>{i}.</b> {advice}\n\n"
-        
+
         text += "<i>📌 Зберігайте, щоб спростити собі життя!</i>"
         return text, img
 
-    elif hour == 17:
+    elif 17 <= hour < 20:
         img = get_random_image("media/parables")
         parable = get_random_lines('parables')
         text = f"📖 <b>РОЗДУМИ</b>\n\n{parable}\n\n<i>✨Залишаю вас із цією думкою наодинці. </i>"
@@ -523,21 +594,23 @@ def make_post():
     elif hour >= 20 or hour < 5:
         img = get_random_image("media/evening")
         j = get_random_lines('jokes')
-        text = (f"😂 <b>Хвилинка гумору:</b>\n└ {j}\n\n"
-                f"{get_movie()}\n\n"
-                f"✨ <i>{random.choice(night_wishes)}</i>")
+        text = (
+            f"😂 <b>Хвилинка гумору:</b>\n└ {j}\n\n"
+            f"{get_movie()}\n\n"
+            f"✨ <i>{random.choice(night_wishes)}</i>"
+        )
         return text, img
 
     else:
         img = get_random_image("media/day")
-        text = (f"{random.choice(intros_advices)}\n└ {get_random_lines('advices')}")
+        text = f"{random.choice(intros_advices)}\n└ {get_random_lines('advices')}"
         return text, img
 
 if __name__ == "__main__":
     content, photo = make_post()
-    
+
     # Відправляємо в Telegram
     send_telegram(content, photo)
-    
+
     # Відправляємо у Viber
     send_viber(content, photo)
