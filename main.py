@@ -588,7 +588,7 @@ def make_post():
     elif 17 <= hour < 20:
         img = get_random_image("media/parables")
         parable = get_random_lines('parables')
-        text = f"📖 <b>РОЗДУМИ</b>\n\n{parable}\n\n<i>✨Залишаю вас із цією думкою наодинці. </i>"
+        text = f"📖 <b>КНИГА НА ВЕЧІР</b>\n\n{parable}\n\n<i>✨📖📚📕📗📘📙🔖📝✍️📄🖋️🔍📑📜🧠🎓✨ </i>"
         return text, img
 
     elif hour >= 20 or hour < 5:
