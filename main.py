@@ -570,19 +570,19 @@ def make_post():
 
     elif 11 <= hour < 13:
         img = get_random_image("media/infographics")
-        text = f"🗂 <b>КОРИСНА ПАМ'ЯТКА</b>\n\n{random.choice(info_captions)}"
+        text = f"🗂 <b>Практикум життєвих ситуацій</b>\n\n{random.choice(info_captions)}"
         return text, img
 
     elif 13 <= hour < 16:
         img = None
-        count = random.randint(3, 5)
+        count = random.randint(2, 3)
         advices = get_multiple_random_lines('lifehacks', count)
 
-        text = f"💡 <b>ТОП-{count} ЛАЙФХАКІВ НА СЬОГОДНІ:</b>\n\n"
+        text = f"🧩 <b>ПРОСТО ПРО СКЛАДНЕ:</b>\n\n"
         for i, advice in enumerate(advices, 1):
             text += f"<b>{i}.</b> {advice}\n\n"
 
-        text += "<i>📌 Зберігайте, щоб спростити собі життя!</i>"
+        text += "<i>📌 Зберігайте, щоб поглянути на речі інакше!</i>"
         return text, img
 
     elif 17 <= hour < 20:
