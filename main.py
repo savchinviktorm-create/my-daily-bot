@@ -5,6 +5,7 @@ import os
 import pytz
 import time
 import re
+import json
 from urllib.parse import quote
 
 # --- НАЛАШТУВАННЯ ---
@@ -12,6 +13,7 @@ TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "583e99233cb332aaf8ab0ded7a92dde7"
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779933996:AAFtTmrPZ3qME5WV3ZRf7rfOHKzxbCsmSFY")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "653398188")
 VIBER_TOKEN = os.environ.get("VIBER_TOKEN", "564974a12af0ed30-dbbbbb3694b529d4-5a27e9e2272c8279")  # Твій токен додано сюди
+MINI_APP_URL = os.environ.get("MINI_APP_URL", "https://t.me/ProstirKorBot/shchaslyvyi")  # Вкажіть тут посилання на ваш Mini App
 
 try:
     KIEV_TZ = pytz.timezone('Europe/Kyiv')
@@ -87,7 +89,7 @@ def check_viber_media(photo_url):
 
     return False
 
-def send_telegram(text, photo_path=None):
+def send_telegram(text, photo_path=None, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/send{'Photo' if photo_path else 'Message'}"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -96,8 +98,13 @@ def send_telegram(text, photo_path=None):
     }
 
     if photo_path and os.path.exists(photo_path):
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
         with open(photo_path, 'rb') as photo:
             return requests.post(url, data=payload, files={"photo": photo}).json()
+
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
 
     return requests.post(url, json=payload).json()
 
@@ -491,7 +498,7 @@ def make_post():
     ]
 
     info_captions = [
-        "📌 Збережіть собі, щоб не загубити!", "💡 Корисна шпаргалка на всі випадки життя.",
+        "📌 Збережіть себе, щоб не загубити!", "💡 Корисна шпаргалка на всі випадки життя.",
         "🛡 Важливо знати кожному. Перешліть близьким!", "🩺 Здоров'я та безпека понад усе. Зберігайте!",
         "🧩 Просто і зрозуміло про важливе.", "📌 Додайте в 'Збережене', колись обов'язково знадобиться.",
         "💡 Інструкція, яка має бути під рукою.", "🛑 Правила, які можуть врятувати здоров'я.",
@@ -504,7 +511,7 @@ def make_post():
         "📌 Корисно знати: зберігаємо в закладки.", "💡 Лайфхак, який перевірено часом.",
         "🛑 Краще знати і не використати, ніж навпаки.", "📋 Ваш короткий гід по безпеці та здоров'ю.",
         "⚡️ Профілактика та перша допомога в одній картинці.", "📌 Нагадування, яке ніколи не буде зайвим.",
-        "💡 Поділіться цим постом з тими, про кого піклуєтесь.", "🛡 Обізнаний — значить захищений!",
+        "💡 Поділіться цим постом з тими, про кого піклуєтесь.", "🛡 Обізнаний — значит захищений!",
         "📋 Пам'ятка, яка економить нерви і час.", "⚡️ Максимум користі в одному зображенні.",
         "📌 Збережіть цю інструкцію прямо зараз.", "💡 Коротко, ясно і по суті.",
         "🛑 Базові знання для комфортного життя.", "📋 Ваш особистий довідник у форматі картинки.",
@@ -526,12 +533,12 @@ def make_post():
     if weekday == 2 and hour == 16:
         img = get_random_image("media/books")
         text = f"📚 <b>КНИЖКОВА ПОЛИЦЯ</b>\n\n{random.choice(book_captions)}"
-        return text, img
+        return text, img, None
 
     elif weekday == 3 and hour == 16:
         img = get_random_image("media/cinema")
         text = get_cinema_premieres()
-        return text, img
+        return text, img, None
 
     elif 5 <= hour < 11:
         img = get_random_image("media/morning")
@@ -539,16 +546,6 @@ def make_post():
         holidays = get_data_by_date('Holiday')
         history = get_data_by_date('Wiking')
         ny_days = (datetime.date(now.year + 1, 1, 1) - now.date()).days
-
-        chosen_file = random.choice(['advices', 'facts', 'jokes'])
-        random_info = get_random_lines(chosen_file)
-
-        if chosen_file == 'advices':
-            intro = random.choice(intros_advices)
-        elif chosen_file == 'facts':
-            intro = random.choice(intros_facts)
-        else:
-            intro = random.choice(intros_quotes)
 
         text = (
             f"🌅 <b>ДОБРОГО РАНКУ!</b>\n"
@@ -563,15 +560,26 @@ def make_post():
             f"{get_currency_logic()}\n"
             f"🎄 До Нового Року: {ny_days} дн.\n"
             f"{divider}\n"
-            f"{intro}\n"
-            f"└ {random_info}"
+            f"🔮 <b>ТВІЙ ПЕРСОНАЛЬНИЙ ГОРОСКОП ТА ПЕРЕДБАЧЕННЯ</b>\n"
+            f"└ Дізнайся астрологічний прогноз і отримати своє особливе послання на ранок."
         )
-        return text, img
+
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "✨ Дізнатися, що чекає сьогодні",
+                        "url": MINI_APP_URL
+                    }
+                ]
+            ]
+        }
+        return text, img, reply_markup
 
     elif 11 <= hour < 13:
         img = get_random_image("media/infographics")
         text = f"🗂 <b>Практикум життєвих ситуацій</b>\n\n{random.choice(info_captions)}"
-        return text, img
+        return text, img, None
 
     elif 13 <= hour < 16:
         img = None
@@ -583,13 +591,13 @@ def make_post():
             text += f"<b>{i}.</b> {advice}\n\n"
 
         text += "<i>📌 Зберігайте, щоб поглянути на речі інакше!</i>"
-        return text, img
+        return text, img, None
 
     elif 17 <= hour < 20:
         img = get_random_image("media/parables")
         parable = get_random_lines('parables')
         text = f"📖 <b>КНИГА НА ВЕЧІР</b>\n\n{parable}\n\n<i>✨📖📚📕📗📘📙🔖📝✍️📄🖋️🔍📑📜🧠🎓✨ </i>"
-        return text, img
+        return text, img, None
 
     elif hour >= 20 or hour < 5:
         img = get_random_image("media/evening")
@@ -599,18 +607,18 @@ def make_post():
             f"{get_movie()}\n\n"
             f"✨ <i>{random.choice(night_wishes)}</i>"
         )
-        return text, img
+        return text, img, None
 
     else:
         img = get_random_image("media/day")
         text = f"{random.choice(intros_advices)}\n└ {get_random_lines('advices')}"
-        return text, img
+        return text, img, None
 
 if __name__ == "__main__":
-    content, photo = make_post()
+    content, photo, reply_markup = make_post()
 
     # Відправляємо в Telegram
-    send_telegram(content, photo)
+    send_telegram(content, photo, reply_markup)
 
     # Відправляємо у Viber
     send_viber(content, photo)
