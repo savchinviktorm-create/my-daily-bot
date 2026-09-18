@@ -583,15 +583,23 @@ def make_post():
 
     elif 13 <= hour < 16:
         img = None
-        count = random.randint(2, 3)
-        advices = get_multiple_random_lines('lifehacks', count)
+        # Тепер беремо лише ОДНУ пораду замість 2-3
+        advice = get_random_lines('lifehacks')
 
-        text = f"🧩 <b>ПРОСТО ПРО СКЛАДНЕ:</b>\n\n"
-        for i, advice in enumerate(advices, 1):
-            text += f"<b>{i}.</b> {advice}\n\n"
+        text = f"🧩 <b>ПРОСТО ПРО СКЛАДНЕ:</b>\n\n{advice}\n\n<i>📌 Тисніть на кнопку нижче, щоб отримати пораду саме для вашої ситуації!</i>"
 
-        text += "<i>📌 Зберігайте, щоб поглянути на речі інакше!</i>"
-        return text, img, None
+        # Додаємо клавіатуру з потрібним посиланням
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "💡 БІЛЬШЕ ПОРАД ТУТ",
+                        "url": "https://t.me/lifechaksdaybot/lifechaks"
+                    }
+                ]
+            ]
+        }
+        return text, img, reply_markup
 
     elif 17 <= hour < 20:
         img = get_random_image("media/parables")
