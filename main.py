@@ -604,8 +604,19 @@ def make_post():
     elif 17 <= hour < 20:
         img = get_random_image("media/parables")
         parable = get_random_lines('parables')
-        text = f"📖 <b>КНИГА НА ВЕЧІР</b>\n\n{parable}\n\n<i>✨📖📚📕📗📘📙🔖📝✍️📄🖋️🔍📑📜🧠🎓✨ </i>"
-        return text, img, None
+        text = f"📖 <b>КНИГА НА ВЕЧІР</b>\n\n{parable}\n\n<i>✨📖📚📕📗📘📙🔍📑📜🧠🎓✨ </i>"
+        
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "📚 БІЛЬШЕ КНИГ",
+                        "url": "https://t.me/boock1bot/boock"
+                    }
+                ]
+            ]
+        }
+        return text, img, reply_markup
 
     elif hour >= 20 or hour < 5:
         img = get_random_image("media/evening")
